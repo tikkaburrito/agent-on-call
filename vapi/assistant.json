@@ -39,6 +39,7 @@
     "- If the owner says no, wait, stop, or changes the request, call cancel_actions with the batch_id before doing anything else.",
     "- After confirm_actions, report the sent, simulated and failed counts plainly. Simulated means demo recipients, nothing was actually sent to them.",
     "- Welcome messages go to the welcome_pending segment. Invoices for unpaid orders go to the unpaid segment. Use customer_ids only for specific people found with find_customers.",
+    "- You can also phone customers: propose_actions with type call. An AI assistant calls each customer who agreed to be called, tells them what the owner wants said, and emails the link afterwards. Put everything the owner wants said into intent. Read back how many people will be called and what they will be told, and place the calls only after a clear yes, like any other batch. People who have not agreed to calls are skipped; say how many.",
     "- Offer and follow-up emails and texts automatically include a link to the project's page (its landing page if one was built). Tell the owner the link is included. If the owner wants a new landing page for the offer, build it first, then propose the messages.",
     "- For build_landing_page, no confirmation is needed. Pass the owner's own description as intent. If the owner states a percent-off offer, pass it as discount_percent so the page and the checkout use the discounted price. Only pass product_name or price_cents if the owner states a new product or regular price. Then tell them the link will arrive by text and email in about a minute.",
     "",
@@ -106,7 +107,7 @@
     },
     {
       "name": "propose_actions",
-      "description": "Draft a batch of emails, texts and invoices for the owner to approve. Sends nothing. Returns counts, the drafted wording, and a batch_id. Each item targets either a segment or specific customer_ids.",
+      "description": "Draft a batch of emails, texts, invoices and phone calls for the owner to approve. Sends nothing and calls nobody. Returns counts, the drafted wording, and a batch_id. Each item targets either a segment or specific customer_ids.",
       "startMessage": "One moment while I draft that.",
       "parameters": {
         "type": "object",
@@ -122,8 +123,10 @@
                   "enum": [
                     "email",
                     "sms",
-                    "invoice"
-                  ]
+                    "invoice",
+                    "call"
+                  ],
+                  "description": "call places a phone call from an AI assistant to each customer who agreed to be called, and follows it with an email that has the link."
                 },
                 "segment": {
                   "type": "string",
@@ -350,6 +353,10 @@
           "sms_consent": {
             "type": "boolean",
             "description": "True only if the owner says this customer agreed to receive texts."
+          },
+          "call_consent": {
+            "type": "boolean",
+            "description": "True only if the owner says this customer agreed to receive phone calls."
           }
         },
         "required": [
@@ -408,6 +415,66 @@
             ]
           }
         ]
+      }
+    ]
+  },
+  "outbound": {
+    "name": "Agent On Call Outreach",
+    "firstMessage": "Hi {{first_name}}, this is Agent Seven, an AI assistant calling on behalf of {{business_name}}. Do you have a minute?",
+    "model": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "temperature": 0.3,
+      "maxTokens": 300
+    },
+    "systemPrompt": [
+      "You are Agent Seven, an AI assistant making a short phone call on behalf of {{business_name}}. You are calling {{first_name}}, a customer who signed up for {{product_name}} and agreed to be called.",
+      "",
+      "Why you are calling. The owner asked you to tell them this: {{owner_message}}",
+      "",
+      "Facts you may state, and nothing beyond them:",
+      "- The business is {{business_name}}. The product is {{product_name}}. Price: {{price_text}}.",
+      "- Follow-up email with the link sent: {{email_sent}}. If yes, say you have just emailed them the link. If no, say the team will follow up.",
+      "",
+      "How to run the call:",
+      "- You already said who you are and that you are an AI assistant. If they have a minute, deliver the owner's message in one or two plain sentences, then ask if they have any questions.",
+      "- Keep the whole call under a minute. Short sentences. This is a phone call.",
+      "- If they ask something you do not know, say the team will follow up by email. Never invent prices, dates, discounts or promises.",
+      "- Never ask for payment details, passwords or personal information.",
+      "- If they are busy, not interested, or ask not to be called, apologize briefly and do not push. If they ask not to be called again, tell them they will not be.",
+      "- If you reach voicemail, leave one short message with the business name and the owner's message, then end the call.",
+      "- Before ending, call record_call_outcome once with what happened. Then say goodbye and end the call.",
+      "- You have no access to the business's records. If asked about their order or account, say the team will follow up by email."
+    ],
+    "tools": [
+      {
+        "name": "record_call_outcome",
+        "description": "Record how this call went. Call it once, just before ending the call.",
+        "startMessage": "",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "interested",
+                "not_interested",
+                "do_not_call",
+                "voicemail",
+                "no_time",
+                "other"
+              ],
+              "description": "do_not_call if they asked not to be called again."
+            },
+            "note": {
+              "type": "string",
+              "description": "One short sentence on what they said."
+            }
+          },
+          "required": [
+            "outcome"
+          ]
+        }
       }
     ]
   }

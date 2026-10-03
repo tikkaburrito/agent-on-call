@@ -16,10 +16,10 @@ type CallEvent = {
 };
 type CallAction = {
   id: string;
-  type: "email" | "sms" | "invoice";
+  type: "email" | "sms" | "invoice" | "call";
   status: ActionStatus;
   payload: { subject?: string; body?: string; amount_cents?: number; intent?: string; copy_source?: string };
-  result: { error?: string; reason?: string; note?: string; hosted_invoice_url?: string; sms_error?: string } | null;
+  result: { error?: string; reason?: string; note?: string; hosted_invoice_url?: string; sms_error?: string; outcome?: string; outcome_note?: string } | null;
   created_at: string;
   customers: { name: string; email: string } | null;
 };
@@ -58,7 +58,7 @@ const STATUS_STYLE: Record<ActionStatus, string> = {
   failed: "bg-red-500 text-white",
   cancelled: "bg-zinc-800 text-zinc-400 line-through",
 };
-const TYPE_LABEL = { email: "Email", sms: "Text", invoice: "Invoice" } as const;
+const TYPE_LABEL = { email: "Email", sms: "Text", invoice: "Invoice", call: "Call" } as const;
 const TOOL_LABEL: Record<string, string> = {
   get_attention_items: "Checked what needs attention",
   find_customers: "Looked up customers",
@@ -284,7 +284,8 @@ export default function Admin() {
                   )}
                 </span>
                 <span className="mt-1 block text-sm text-zinc-400">
-                  {day(c.started_at)} {clock(c.started_at)} · {c.type === "webCall" ? "web call" : c.caller_phone ?? "no caller ID"}
+                  {day(c.started_at)} {clock(c.started_at)} ·{" "}
+                  {c.type === "webCall" ? "web call" : c.type === "outboundPhoneCall" ? `outbound to ${c.caller_phone ?? "customer"}` : c.caller_phone ?? "no caller ID"}
                 </span>
                 <span className="mt-1 block text-sm text-zinc-500">
                   {c.events.filter((e) => e.kind === "tool_call").length} tool calls · {c.actions.length} actions
@@ -301,7 +302,7 @@ export default function Admin() {
                 <div className="rounded-2xl bg-zinc-900 p-5 ring-1 ring-zinc-800">
                   <h2 className="text-2xl font-semibold">{call.business ?? "Unknown caller"}</h2>
                   <p className="mt-1 text-base text-zinc-400">
-                    {day(call.started_at)} {clock(call.started_at)} · {call.type === "webCall" ? "web call" : `from ${call.caller_phone ?? "unknown"}`} ·{" "}
+                    {day(call.started_at)} {clock(call.started_at)} · {call.type === "webCall" ? "web call" : call.type === "outboundPhoneCall" ? `outbound call to ${call.caller_phone ?? "customer"}` : `from ${call.caller_phone ?? "unknown"}`} ·{" "}
                     {live(call) ? "in progress" : `ended${call.ended_reason ? ` (${call.ended_reason.replaceAll("-", " ")})` : ""}`}
                   </p>
                   {call.summary && <p className="mt-3 text-base leading-relaxed text-zinc-300">{call.summary}</p>}
@@ -322,7 +323,7 @@ export default function Admin() {
                         <li key={e.id} className={`row-in flex ${user ? "justify-end" : ""}`}>
                           <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-base leading-relaxed ${user ? "rounded-br-md bg-amber-400 text-zinc-950" : "rounded-bl-md bg-zinc-800 text-zinc-100"}`}>
                             <span className={`block text-xs font-semibold uppercase tracking-wide ${user ? "text-zinc-800" : "text-zinc-400"}`}>
-                              {user ? "Owner" : "Agent"} · {clock(e.at)}
+                              {user ? (call.type === "outboundPhoneCall" ? "Customer" : "Owner") : "Agent"} · {clock(e.at)}
                             </span>
                             {e.text}
                           </div>
@@ -412,6 +413,12 @@ export default function Admin() {
                           )}
                           {a.result?.error && <p className="mt-3 text-red-300">Failed: {a.result.error}</p>}
                           {a.result?.sms_error && <p className="mt-3 text-red-300">Text: {a.result.sms_error}</p>}
+                          {a.result?.outcome && (
+                            <p className="mt-3 text-emerald-300">
+                              Call outcome: {a.result.outcome.replaceAll("_", " ")}
+                              {a.result.outcome_note ? `. ${a.result.outcome_note}` : ""}
+                            </p>
+                          )}
                           {a.result?.note && <p className="mt-3 text-zinc-400">{a.result.note}</p>}
                           {a.result?.reason && <p className="mt-3 text-violet-300">Not sent: {a.result.reason} (demo data).</p>}
                         </div>

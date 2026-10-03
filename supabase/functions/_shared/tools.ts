@@ -127,7 +127,7 @@ export async function find_customers(ctx: CallerContext, args: Args): Promise<st
 // ---------------------------------------------------------------- propose_actions
 
 type Item = {
-  type: "email" | "sms" | "invoice";
+  type: "email" | "sms" | "invoice" | "call";
   segment?: string;
   customer_ids?: string[];
   intent: string;
@@ -142,7 +142,7 @@ function parseItems(raw: unknown): Item[] {
   for (const r of raw) {
     if (!r || typeof r !== "object") continue;
     const o = r as Args;
-    if (o.type !== "email" && o.type !== "sms" && o.type !== "invoice") continue;
+    if (o.type !== "email" && o.type !== "sms" && o.type !== "invoice" && o.type !== "call") continue;
     const ids = Array.isArray(o.customer_ids)
       ? o.customer_ids.filter((x): x is string => typeof x === "string" && UUID.test(x))
       : undefined;
@@ -173,6 +173,13 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     items.map((item) => findCustomers(siteId, null, item.customer_ids ? "all" : item.segment ?? "all")),
   );
 
+  // Calls need their own consent, which find_customers does not return.
+  const callable = new Set<string>();
+  if (items.some((i) => i.type === "call")) {
+    const { data } = await db.from("customers").select("id").eq("site_id", siteId).eq("call_consent", true).not("phone", "is", null);
+    for (const c of data ?? []) callable.add(c.id);
+  }
+  let skippedCalls = 0;
   let skippedSms = 0;
   const planned: { item: Item; itemIndex: number; customer: Found; amount?: number }[] = [];
   const seen = new Set<string>();
@@ -182,11 +189,19 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     for (const customer of pools[itemIndex]) {
       if (ids && !ids.has(customer.id)) continue;
       // One message per person: the same address signed up twice still gets one email.
-      const who = item.type === "email" ? customer.email.toLowerCase() : item.type === "sms" ? customer.phone ?? customer.id : customer.id;
+      const who = item.type === "email"
+        ? customer.email.toLowerCase()
+        : item.type === "sms" || item.type === "call"
+          ? customer.phone ?? customer.id
+          : customer.id;
       const key = `${item.type}:${who}`;
       if (seen.has(key)) continue;
       if (item.type === "sms" && (!customer.consent || !customer.phone)) {
         skippedSms++;
+        continue;
+      }
+      if (item.type === "call" && !callable.has(customer.id)) {
+        skippedCalls++;
         continue;
       }
       seen.add(key);
@@ -197,16 +212,17 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     }
   });
 
-  const skipNote = skippedSms
-    ? ` ${plural(skippedSms, "person", "people")} skipped for texts: no consent or no phone.`
-    : "";
+  const skipNote =
+    (skippedSms ? ` ${plural(skippedSms, "person", "people")} skipped for texts: no consent or no phone.` : "") +
+    (skippedCalls ? ` ${plural(skippedCalls, "person", "people")} skipped for calls: they have not agreed to be called or have no phone.` : "");
   if (planned.length === 0) return oneLine(`Nothing to propose: no matching customers.${skipNote}`);
   if (planned.length > MAX_ACTIONS) {
     return `That would be ${planned.length} actions, more than the ${MAX_ACTIONS} I can run in one batch. Ask the owner to narrow it down.`;
   }
 
+  // A call is followed by an email with the link, so it gets email copy too.
   const requests: DraftRequest[] = items.map((item) => ({
-    type: item.type,
+    type: item.type === "call" ? "email" : item.type,
     intent: item.intent,
     welcome: item.type !== "invoice" && (/welcom/i.test(item.intent) || item.segment === "welcome_pending"),
   }));
@@ -221,7 +237,7 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
   const batchId = crypto.randomUUID();
   const rows = planned.map(({ item, itemIndex, customer, amount }) => {
     const personal = personalize(site, requests[itemIndex], drafts[itemIndex], customer.name);
-    const copy = linked(itemIndex) ? withLink(item.type, personal, pageUrl) : personal;
+    const copy = linked(itemIndex) ? withLink(item.type === "call" ? "email" : item.type, personal, pageUrl) : personal;
     return {
       site_id: siteId,
       batch_id: batchId,
@@ -252,6 +268,7 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
   if (count("email", true)) parts.push(plural(count("email", true), "welcome email"));
   if (count("email", false)) parts.push(plural(count("email", false), "follow-up email"));
   if (count("sms")) parts.push(plural(count("sms"), "text"));
+  if (count("call")) parts.push(plural(count("call"), "phone call"));
   if (count("invoice")) {
     const total = planned.reduce((sum, p) => sum + (p.amount ?? 0), 0);
     parts.push(`${plural(count("invoice"), "invoice")} totaling ${dollars(total)}`);
@@ -262,6 +279,9 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     .map((item, i) => {
       const row = rows.find((r, j) => planned[j].itemIndex === i);
       if (!row) return "";
+      if (item.type === "call") {
+        return `On each call an AI assistant will say it is calling for ${site.name}, tell them: "${preview(item.intent, 160)}", answer simple questions, and follow up with an email that has the link.`;
+      }
       const label = item.type === "sms" ? "Text" : item.type === "invoice" ? "Invoice email" : "Email";
       const subject = row.payload.subject ? ` subject "${row.payload.subject}",` : "";
       return `${label}${subject} says: "${preview(row.payload.body, 190)}"`;
@@ -335,7 +355,7 @@ export async function confirm_actions(ctx: CallerContext, args: Args): Promise<s
   const { data: rows } = await db.from("actions").select("status").eq("batch_id", batchId).in("site_id", siteIds);
   const n = (s: string) => (rows ?? []).filter((r) => r.status === s).length;
   const running = n("approved") + n("executing");
-  const parts = [`${n("executed")} sent`, `${n("simulated")} simulated`, `${n("failed")} failed`];
+  const parts = [`${n("executed")} sent or placed`, `${n("simulated")} simulated`, `${n("failed")} failed`];
   if (running) parts.push(`${running} still running`);
   return oneLine(
     `Done. ${parts.join(", ")}.${offerNote} Simulated means the recipient is demo data, so nothing was actually sent to them.`,
@@ -448,7 +468,7 @@ export async function get_recent_actions(ctx: CallerContext): Promise<string> {
     const payload = a.payload as { subject?: string; body?: string };
     const result = (a.result ?? {}) as { error?: string };
     const to = (a.customers as unknown as { name?: string } | null)?.name ?? "a customer";
-    const kind = a.type === "sms" ? "Text" : a.type === "invoice" ? "Invoice" : "Email";
+    const kind = a.type === "sms" ? "Text" : a.type === "invoice" ? "Invoice" : a.type === "call" ? "Phone call" : "Email";
     const subject = payload.subject ? ` Subject "${payload.subject}".` : "";
     const why = a.status === "failed" && result.error ? ` Reason: ${preview(result.error, 110)}.` : "";
     return `${kind} to ${to}, ${word[a.status] ?? a.status}.${subject} It says: "${preview(payload.body ?? "", 200)}"${why}`;
@@ -605,7 +625,14 @@ export async function add_customer(ctx: CallerContext, args: Args): Promise<stri
   if (dupe?.length) return `${email} is already a customer of ${site.product_name}. Nothing was added.`;
   const { error } = await db
     .from("customers")
-    .insert({ site_id: site.id, name, email, phone, consent: args.sms_consent === true && !!phone });
+    .insert({
+      site_id: site.id,
+      name,
+      email,
+      phone,
+      consent: args.sms_consent === true && !!phone,
+      call_consent: args.call_consent === true && !!phone,
+    });
   if (error) throw new Error(error.message);
   return oneLine(`Added ${name}, ${email}, to ${site.product_name}. They count as a new signup who has not been welcomed yet.`);
 }

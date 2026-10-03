@@ -21,6 +21,7 @@ export function BookingForm({ siteId, cta }: { siteId: string; cta: string }) {
           email: form.get("email"),
           phone: form.get("phone"),
           consent: form.get("consent") === "on",
+          call_consent: form.get("call_consent") === "on",
         }),
       });
       const data = await res.json();
@@ -54,6 +55,10 @@ export function BookingForm({ siteId, cta }: { siteId: string; cta: string }) {
       <label className="flex items-start gap-3 text-sm text-stone-600">
         <input name="consent" type="checkbox" className="mt-0.5 size-4 accent-amber-700" />
         Text me about my booking. Message rates may apply.
+      </label>
+      <label className="flex items-start gap-3 text-sm text-stone-600">
+        <input name="call_consent" type="checkbox" className="mt-0.5 size-4 accent-amber-700" />
+        You may call me about my booking, including calls from an AI assistant.
       </label>
       {error && (
         <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

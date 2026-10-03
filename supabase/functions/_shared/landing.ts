@@ -164,6 +164,7 @@ export function renderLanding(site: Site, copy: LandingCopy, appUrl: string): st
       <label>Email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label>
       <label><div>Mobile <span>(optional)</span></div><input type="tel" name="phone" autocomplete="tel" placeholder="(415) 555-0123"></label>
       <label class="consent"><input type="checkbox" name="consent"> Text me about my booking. Message rates may apply.</label>
+      <label class="consent"><input type="checkbox" name="call_consent"> You may call me about my booking, including calls from an AI assistant.</label>
       <p class="error" id="error" role="alert" hidden></p>
       <button type="submit" id="submit">${esc(copy.cta)}</button>
     </form>
@@ -190,7 +191,8 @@ export function renderLanding(site: Site, copy: LandingCopy, appUrl: string): st
         name: data.get("name"),
         email: data.get("email"),
         phone: data.get("phone"),
-        consent: data.get("consent") === "on"
+        consent: data.get("consent") === "on",
+        call_consent: data.get("call_consent") === "on"
       })
     })
       .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })

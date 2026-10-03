@@ -80,6 +80,16 @@ An owner can switch on three standing rules per project by voice. The agent desc
 
 `pg_cron` calls the `automations` edge function every minute. It creates `approved` actions marked `source = 'automation'` and hands them to the same executor as spoken batches, so the allowlist, idempotency and logging are identical. Each customer gets each rule at most once.
 
+## Outbound calls
+
+The owner can also have the agent phone customers: "call my new signups about the one month free offer". It is a `call` item in `propose_actions`, so it goes through the same read-back and spoken yes as any other batch.
+
+- **A separate assistant makes the call.** "Agent On Call Outreach" knows only what each call is given (business, product, price, the owner's message). Its one tool reports how the call went. The owner's tools are refused on any outbound call, whoever answers.
+- **It says it is an AI** in its first sentence, keeps the call under a minute, and is told not to invent anything.
+- **Call consent is separate.** Signup forms have a "You may call me, including calls from an AI assistant" checkbox (`customers.call_consent`). People without it are skipped, and the agent says how many. "Don't call me again" on a call withdraws it at once.
+- **Allowlist.** Only allowlisted numbers are actually dialed; everyone else is simulated.
+- A follow-up email with the page link goes out with each call, and the call itself appears in the admin console with its transcript and outcome.
+
 ## The phone side
 
 - **Greeting by name.** The phone number asks `vapi-tools` who should answer (`assistant-request`). The function looks up the caller and returns the assistant with a personal first message; unknown numbers are told the number isn't registered.
@@ -178,6 +188,7 @@ bash scripts/m4-tools.sh          # every tool over HTTP: caller recognition, pr
 npx tsx scripts/m6-builder.ts     # landing page build, public URL, checkout from the page
 npx tsx scripts/m7-realtime.ts    # realtime to the owner, nothing to a second user
 npx tsx scripts/m8-automations.ts # rules off do nothing; on: one action per customer, no duplicates
+npx tsx scripts/m9-outbound.ts    # outbound calls: consent, allowlist, outcome, owner-tool guard (--live rings your own phone)
 bash scripts/qa-bundle.sh         # no server secrets in the client bundle
 npx tsx scripts/reset-demo.ts     # back to the seeded state before a rehearsal
 ```

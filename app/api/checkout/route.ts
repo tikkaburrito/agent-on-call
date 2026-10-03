@@ -36,6 +36,7 @@ export async function POST(request: Request) {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase().slice(0, 200) : "";
   const phone = toE164(body.phone);
   const consent = body.consent === true;
+  const callConsent = body.call_consent === true;
 
   if (!UUID.test(siteId)) return json({ error: "Unknown site." }, 400);
   if (!name) return json({ error: "Please enter your name." }, 400);
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
 
   const { data: customer, error: customerError } = await db
     .from("customers")
-    .insert({ site_id: site.id, name, email, phone, consent: consent && !!phone })
+    .insert({ site_id: site.id, name, email, phone, consent: consent && !!phone, call_consent: callConsent && !!phone })
     .select("id")
     .single();
   if (customerError) return json({ error: "Could not save your details." }, 500);

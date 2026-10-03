@@ -101,6 +101,10 @@ call mark_paid '{"customer": "zzz-nobody"}' "$OWNER_PHONE"; has "Nothing was cha
 call create_project '{"product_name": "QA Workshop", "price_cents": 2500, "build_page": false}' "$OWNER_PHONE"; has "Created the project QA Workshop"; check "create_project adds a project to the business" $?
 call get_attention_items '{"project": "QA Workshop"}' "$OWNER_PHONE"; has "Project QA Workshop"; check "the new project is usable straight away" $?
 
+echo "== outbound calls"
+call propose_actions '{"project": "Intro class pack", "items": [{"type": "call", "segment": "unpaid", "intent": "Remind them their class pack is waiting."}]}' "$OWNER_PHONE"
+has "skipped for calls"; check "customers who have not agreed to calls are skipped" $?
+
 echo
 check "every call under 5 s" "$(node -e "process.exit($SLOWEST < 5 ? 0 : 1)"; echo $?)" "slowest ${SLOWEST}s"
 [ "$FAILS" -eq 0 ] && echo "All checks passed." || echo "$FAILS check(s) FAILED."

@@ -56,6 +56,13 @@ Keys live in two places: Vercel (the website) and Supabase function secrets (the
 - Now: drafts that never get a yes are cancelled when the call ends (with a note saying so); if a page and a message are requested together the agent does both; after building an offer page it asks whether to email the offer; one email per address even if someone signed up twice.
 - Tikka Burrito AI has 5 customers; the three added addresses are on `SEND_ALLOWLIST`, so they receive real emails.
 
+## Outbound calls (built, not yet heard on a real phone)
+
+- "Call my customers about ..." places AI phone calls after the owner's yes, through a separate customer-facing assistant ("Agent On Call Outreach") that has none of the owner's tools.
+- Only customers who ticked "You may call me" and whose number is on `SEND_ALLOWLIST` are dialed. `scripts/m9-outbound.ts`: 6/6 pass with no real call placed.
+- **Not verified:** a real call. `npx tsx scripts/m9-outbound.ts --live` rings the first phone on the allowlist.
+- Landing pages built before this change do not have the call-consent checkbox; ask the agent to rebuild the page, or use the hosted signup page.
+
 ## Notes
 
 - The Supabase project is on the free tier, so it is not billed.

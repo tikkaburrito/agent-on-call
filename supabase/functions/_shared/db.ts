@@ -91,6 +91,7 @@ export type Customer = {
   email: string;
   phone: string | null;
   consent: boolean;
+  call_consent?: boolean;
   welcomed_at: string | null;
 };
 
@@ -98,9 +99,11 @@ export type ActionRow = {
   id: string;
   site_id: string;
   batch_id: string;
-  type: "email" | "sms" | "invoice";
+  type: "email" | "sms" | "invoice" | "call";
   customer_id: string;
   payload: {
+    link?: string;
+    offer_percent?: number;
     subject?: string;
     body?: string;
     amount_cents?: number;

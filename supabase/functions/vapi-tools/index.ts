@@ -134,6 +134,24 @@ async function logEndOfCall(message: Message) {
   });
 }
 
+// ---------------------------------------------------------------- outbound calls
+
+// The customer-facing assistant has one tool: reporting how the call went.
+// "Do not call" withdraws the customer's call consent at once.
+async function recordCallOutcome(message: Message, args: Record<string, unknown>): Promise<string> {
+  const callId: string | undefined = message.call?.id;
+  const outcome = typeof args.outcome === "string" ? args.outcome : "other";
+  const note = typeof args.note === "string" ? args.note.slice(0, 300) : "";
+  if (!callId) return "Noted.";
+  const { data: action } = await db.from("actions").select("id, customer_id, result").eq("result->>vapi_call_id", callId).maybeSingle();
+  if (action) {
+    await db.from("actions").update({ result: { ...(action.result as Record<string, unknown>), outcome, outcome_note: note } }).eq("id", action.id);
+    if (outcome === "do_not_call") await db.from("customers").update({ call_consent: false }).eq("id", action.customer_id);
+  }
+  await logEvent(callId, { kind: "tool_result", text: `Outcome: ${outcome}${note ? `. ${note}` : ""}`, data: { tool: "record_call_outcome", ok: true } });
+  return outcome === "do_not_call" ? "Noted. They will not be called again." : "Noted.";
+}
+
 // ---------------------------------------------------------------- who answers
 
 // Vapi asks this before the call is answered (it allows 7.5 seconds). We look
@@ -192,8 +210,23 @@ Deno.serve(async (req) => {
     return Response.json({});
   }
 
-  const ctx = await resolveContext(message!);
   const calls: ToolCall[] = Array.isArray(message!.toolCallList) ? message!.toolCallList : [];
+
+  // On a call we placed to a customer, the only tool is the outcome report.
+  // The owner's tools are never available there, whoever picks up.
+  if (message!.call?.type === "outboundPhoneCall") {
+    const results = await Promise.all(
+      calls.map(async (call) => {
+        const name = call.function?.name ?? call.name ?? "";
+        if (name !== "record_call_outcome") return { toolCallId: call.id, name, error: "Not available on this call." };
+        const result = await recordCallOutcome(message!, parseArgs(call.function?.arguments ?? call.parameters)).catch(() => "Noted.");
+        return { toolCallId: call.id, name, result };
+      }),
+    );
+    return Response.json({ results });
+  }
+
+  const ctx = await resolveContext(message!);
   const callId = await upsertCall(message!, ctx ? { business_id: ctx.business.id } : {}).catch(() => null);
 
   // Vapi ignores non-200 responses, so failures are reported per call in `error`.

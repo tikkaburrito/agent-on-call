@@ -38,7 +38,7 @@ const STATUS_STYLE: Record<ActionStatus, string> = {
   cancelled: "bg-zinc-800 text-zinc-400 line-through",
 };
 
-const TYPE_LABEL: Record<Action["type"], string> = { email: "Email", sms: "Text", invoice: "Invoice" };
+const TYPE_LABEL: Record<Action["type"], string> = { email: "Email", sms: "Text", invoice: "Invoice", call: "Call" };
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 const field =
@@ -371,7 +371,7 @@ export default function Dashboard() {
                           )}
                         </span>
                         <span className="block truncate text-base text-zinc-400">
-                          {a.type === "sms" ? a.customers?.phone : a.customers?.email}
+                          {a.type === "sms" || a.type === "call" ? a.customers?.phone : a.customers?.email}
                           {a.type === "invoice" && a.payload.amount_cents ? ` · ${dollars(a.payload.amount_cents)}` : ""}
                           {` · ${time(a.created_at)}`}
                         </span>

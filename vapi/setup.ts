@@ -105,13 +105,54 @@ async function main() {
   console.log(`${existing ? "updated" : "created"} assistant "${assistant.name ?? config.name}" with ${toolIds.length} tools`);
   console.log(`ASSISTANT_ID=${assistant.id}`);
 
-  // The edge function needs the assistant id to answer assistant-request.
-  const envFile = readFileSync(".env.local", "utf8");
-  const line = `VAPI_ASSISTANT_ID=${assistant.id}`;
-  writeFileSync(
-    ".env.local",
-    /^VAPI_ASSISTANT_ID=.*$/m.test(envFile) ? envFile.replace(/^VAPI_ASSISTANT_ID=.*$/m, line) : `${envFile.replace(/\n*$/, "\n")}${line}\n`,
-  );
+  // Edge functions need these ids: assistant-request (inbound) and placing calls (outbound).
+  const saveEnv = (key: string, value: string) => {
+    const file = readFileSync(".env.local", "utf8");
+    const line = `${key}=${value}`;
+    const pattern = new RegExp(`^${key}=.*$`, "m");
+    writeFileSync(".env.local", pattern.test(file) ? file.replace(pattern, line) : `${file.replace(/\n*$/, "\n")}${line}\n`);
+  };
+  saveEnv("VAPI_ASSISTANT_ID", assistant.id);
+
+  // Outbound: a separate, customer-facing assistant. It knows only what each
+  // call is told through variables, and its single tool reports the outcome.
+  // It never gets the owner's tools.
+  const out = config.outbound;
+  const outToolIds: string[] = [];
+  for (const spec of out.tools as ToolSpec[]) {
+    const body = {
+      async: false,
+      function: { name: spec.name, description: spec.description, parameters: spec.parameters },
+      server,
+      messages: [{ type: "request-failed", content: "Okay." }],
+    };
+    const found = existingTools.find((t) => t.type === "function" && t.function?.name === spec.name);
+    const tool = found ? await vapi("PATCH", `/tool/${found.id}`, body) : await vapi("POST", "/tool", { type: "function", ...body });
+    outToolIds.push(tool.id);
+  }
+  const outBody = {
+    name: out.name,
+    firstMessage: out.firstMessage,
+    firstMessageMode: "assistant-speaks-first",
+    model: {
+      ...out.model,
+      messages: [{ role: "system", content: (out.systemPrompt as string[]).join("\n") }],
+      toolIds: outToolIds,
+      tools: [{ type: "endCall" }],
+    },
+    ...reporting,
+    maxDurationSeconds: 180,
+  };
+  const savedOut = process.env.VAPI_OUTBOUND_ASSISTANT_ID;
+  const existingOut =
+    (savedOut ? assistants.find((a) => a.id === savedOut) : undefined) ??
+    assistants.find((a) => (a.name ?? "").toLowerCase() === String(out.name).toLowerCase());
+  const outAssistant = existingOut
+    ? await vapi("PATCH", `/assistant/${existingOut.id}`, outBody)
+    : await vapi("POST", "/assistant", outBody);
+  console.log(`${existingOut ? "updated" : "created"} outbound assistant "${out.name}"`);
+  saveEnv("VAPI_OUTBOUND_ASSISTANT_ID", outAssistant.id);
+  if (numbers.length === 1) saveEnv("VAPI_PHONE_NUMBER_ID", numbers[0].id);
 
   // Phone number. Default: the number asks our function who should answer
   // (assistant-request), which lets us greet the caller by name.
@@ -130,7 +171,7 @@ async function main() {
       server: { url: server.url, timeoutSeconds: 7, headers: server.headers },
     });
     console.log(`Phone number ${number.number ?? number.id} asks vapi-tools who should answer (greeting by name).`);
-    console.log("Run: bash scripts/push-secrets.sh   (so the function knows VAPI_ASSISTANT_ID)");
+    console.log("If any id above is new, run: bash scripts/push-secrets.sh");
   }
 }
 

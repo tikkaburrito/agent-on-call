@@ -116,6 +116,64 @@ async function runInvoice(action: ActionRow, customer: Customer, site: Site): Pr
   return { status: "executed", result };
 }
 
+// Places a real phone call through Vapi with the customer-facing assistant,
+// which knows only the offer. Requires call consent and an allowlisted number.
+async function runCall(action: ActionRow, customer: Customer, site: Site): Promise<Outcome> {
+  if (!customer.call_consent || !customer.phone) {
+    return { status: "failed", result: { error: "this customer has not agreed to be called, or has no phone on file" } };
+  }
+  const variables = {
+    first_name: customer.name.trim().split(/\s+/)[0] || "there",
+    business_name: site.name,
+    product_name: site.product_name,
+    price_text: site.discount_percent
+      ? `${site.discount_percent} percent off right now, regular price ${(site.price_cents / 100).toFixed(0)} dollars`
+      : `${(site.price_cents / 100).toFixed(0)} dollars`,
+    owner_message: action.payload.intent ?? "",
+    email_sent: isAllowed(customer.email) ? "yes" : "no",
+  };
+  if (!isAllowed(customer.phone)) {
+    return { status: "simulated", result: { reason: "recipient not on allowlist", would_send: { channel: "call", to: customer.phone, ...variables } } };
+  }
+  const key = Deno.env.get("VAPI_API_KEY");
+  const assistantId = Deno.env.get("VAPI_OUTBOUND_ASSISTANT_ID");
+  const phoneNumberId = Deno.env.get("VAPI_PHONE_NUMBER_ID");
+  if (!key || !assistantId || !phoneNumberId) throw new Error("Outbound calling is not configured");
+
+  const res = await fetch("https://api.vapi.ai/call", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      assistantId,
+      phoneNumberId,
+      customer: { number: customer.phone, name: customer.name.slice(0, 40) },
+      assistantOverrides: { variableValues: variables },
+    }),
+  });
+  const call = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = Array.isArray(call?.message) ? call.message.join("; ") : call?.message;
+    throw new Error(`Vapi ${res.status}: ${message ?? "could not place the call"}`);
+  }
+  // The call shows up in the admin console under this business.
+  await db.from("calls").upsert(
+    { id: call.id, business_id: site.business_id, caller_phone: customer.phone, type: "outboundPhoneCall", status: call.status ?? "queued" },
+    { onConflict: "id" },
+  );
+  const result: Record<string, unknown> = { channel: "call", to: customer.phone, vapi_call_id: call.id };
+
+  // The follow-up email carries the link the assistant mentions.
+  if (isAllowed(customer.email) && action.payload.body) {
+    try {
+      const sent = await sendEmail({ to: customer.email, subject: action.payload.subject ?? `A note from ${site.name}`, text: action.payload.body });
+      result.email_id = sent.id;
+    } catch (e) {
+      result.email_error = (e as Error).message;
+    }
+  }
+  return { status: "executed", result };
+}
+
 async function runBatch(batchId: string) {
   // Atomic claim: only rows still `approved` move to `executing`, so a second
   // run of the same batch claims nothing and sends nothing.
@@ -133,7 +191,7 @@ async function runBatch(batchId: string) {
   const siteId = actions[0].site_id;
   const [{ data: site }, { data: customers }] = await Promise.all([
     db.from("sites").select(SITE_COLUMNS).eq("id", siteId).single(),
-    db.from("customers").select("id, site_id, name, email, phone, consent, welcomed_at").eq("site_id", siteId)
+    db.from("customers").select("id, site_id, name, email, phone, consent, call_consent, welcomed_at").eq("site_id", siteId)
       .in("id", [...new Set(actions.map((a) => a.customer_id))]),
   ]);
   const byId = new Map((customers ?? []).map((c) => [c.id, c as Customer]));
@@ -145,6 +203,7 @@ async function runBatch(batchId: string) {
       if (!site || !customer) throw new Error("customer not found for this site");
       if (action.type === "email") outcome = await runEmail(action, customer);
       else if (action.type === "sms") outcome = await runSms(action, customer);
+      else if (action.type === "call") outcome = await runCall(action, customer, site as unknown as Site);
       else outcome = await runInvoice(action, customer, site as unknown as Site);
     } catch (e) {
       // One failure never stops the rest of the batch.

@@ -24,6 +24,7 @@ export type Customer = {
   email: string;
   phone: string | null;
   consent: boolean;
+  call_consent: boolean;
   welcomed_at: string | null;
   created_at: string;
 };
@@ -52,7 +53,7 @@ export type Action = {
   id: string;
   site_id: string;
   batch_id: string;
-  type: "email" | "sms" | "invoice";
+  type: "email" | "sms" | "invoice" | "call";
   customer_id: string;
   payload: { subject?: string; body?: string; amount_cents?: number; description?: string };
   status: ActionStatus;
