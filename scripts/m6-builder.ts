@@ -16,7 +16,7 @@ async function main() {
       message: {
         type: "tool-calls",
         call: { type: "webCall" },
-        toolCallList: [{ id: "t1", type: "function", function: { name: "build_landing_page", arguments: { intent: "A warm, simple page for busy beginners who want to try yoga" } } }],
+        toolCallList: [{ id: "t1", type: "function", function: { name: "build_landing_page", arguments: { project: "Intro class pack", intent: "A warm, simple page for busy beginners who want to try yoga" } } }],
       },
     }),
   });
