@@ -18,33 +18,42 @@ import {
   type Site,
   type SiteBuild,
 } from "@/lib/types";
+import { Icon, type IconName } from "../icons";
 
 type ActionWithCustomer = Action & { customers: Pick<Customer, "name" | "email" | "phone"> | null };
 type CustomerWithOrders = Customer & { orders: Pick<Order, "status" | "amount_cents" | "hosted_invoice_url">[] };
 
-const KINDS: { kind: AttentionItem["kind"]; label: string }[] = [
-  { kind: "welcome_pending", label: "Not welcomed" },
-  { kind: "unpaid", label: "Unpaid orders" },
-  { kind: "dropped_off", label: "Dropped off" },
+const KINDS: { kind: AttentionItem["kind"]; label: string; icon: IconName; tone: string }[] = [
+  { kind: "welcome_pending", label: "Not welcomed", icon: "mail", tone: "bg-amber-100 text-amber-600" },
+  { kind: "unpaid", label: "Unpaid orders", icon: "receipt", tone: "bg-rose-100 text-rose-600" },
+  { kind: "dropped_off", label: "Dropped off", icon: "user", tone: "bg-sky-100 text-sky-600" },
 ];
 
 const STATUS_STYLE: Record<ActionStatus, string> = {
-  proposed: "bg-zinc-700 text-zinc-100",
-  approved: "bg-sky-500 text-sky-950",
-  executing: "bg-sky-400 text-sky-950 animate-pulse",
-  executed: "bg-emerald-400 text-emerald-950",
-  simulated: "bg-violet-400 text-violet-950",
-  failed: "bg-red-500 text-white",
-  cancelled: "bg-zinc-800 text-zinc-400 line-through",
+  proposed: "bg-slate-100 text-slate-700",
+  approved: "bg-sky-100 text-sky-700",
+  executing: "bg-sky-100 text-sky-700 animate-pulse",
+  executed: "bg-emerald-100 text-emerald-700",
+  simulated: "bg-violet-100 text-violet-700",
+  failed: "bg-red-100 text-red-700",
+  cancelled: "bg-slate-100 text-slate-500 line-through",
 };
 
-const TYPE_LABEL: Record<Action["type"], string> = { email: "Email", sms: "Text", invoice: "Invoice", call: "Call" };
+const TYPE: Record<Action["type"], { label: string; icon: IconName; tone: string }> = {
+  email: { label: "Email", icon: "mail", tone: "bg-sky-100 text-sky-600" },
+  sms: { label: "Text", icon: "chat", tone: "bg-violet-100 text-violet-600" },
+  invoice: { label: "Invoice", icon: "receipt", tone: "bg-emerald-100 text-emerald-600" },
+  call: { label: "Call", icon: "phone", tone: "bg-indigo-100 text-indigo-600" },
+};
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
+// Same brand gradient and card finish as the home page.
+const BRAND = "bg-linear-to-r from-indigo-500 via-fuchsia-500 to-rose-500";
+const CARD = "rounded-2xl bg-white ring-1 ring-slate-200 shadow-[0_6px_20px_-12px] shadow-indigo-500/20";
+
 const field =
-  "w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-lg text-white placeholder:text-zinc-500 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30";
-const primary =
-  "rounded-xl bg-amber-400 px-5 py-3 text-lg font-semibold text-zinc-950 transition hover:bg-amber-300 disabled:opacity-60";
+  "w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
+const primary = `rounded-full px-5 py-2.5 text-base font-semibold text-white shadow-md shadow-fuchsia-500/25 transition hover:brightness-110 disabled:opacity-60 ${BRAND}`;
 
 // Posts a small form to an API route and reports the error, if any.
 function useSubmit(url: string, onDone: (result: Record<string, string>) => void) {
@@ -67,28 +76,28 @@ function useSubmit(url: string, onDone: (result: Record<string, string>) => void
 function Onboarding({ profile, onDone }: { profile: Profile | null; onDone: () => void }) {
   const { busy, error, submit } = useSubmit("/api/onboard", onDone);
   return (
-    <main className="flex flex-1 items-center justify-center bg-zinc-950 px-5 py-16 text-white">
-      <form onSubmit={submit} className="flex w-full max-w-lg flex-col gap-4">
-        <p className="text-sm font-semibold uppercase tracking-widest text-amber-400">Agent on Call</p>
-        <h1 className="text-4xl font-semibold tracking-tight">
+    <main className="flex flex-1 items-center justify-center bg-slate-50 px-5 py-16 text-slate-900">
+      <form onSubmit={submit} className={`flex w-full max-w-lg flex-col gap-4 p-7 ${CARD}`}>
+        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Agent on Call</p>
+        <h1 className="text-3xl font-semibold tracking-tight">
           {profile?.full_name ? `Welcome, ${profile.full_name.split(" ")[0]}.` : "Welcome."} Add your business.
         </h1>
-        <p className="text-lg text-zinc-400">
+        <p className="text-base text-slate-600">
           This creates your business and its first project. You can add more projects later.
         </p>
-        <label className="mt-2 flex flex-col gap-2 text-base text-zinc-300">
+        <label className="mt-1 flex flex-col gap-1.5 text-sm font-medium text-slate-700">
           Business name
           <input name="business_name" required maxLength={80} placeholder="Sunrise Yoga Studio" className={field} />
         </label>
-        <label className="flex flex-col gap-2 text-base text-zinc-300">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
           What do you sell first?
           <input name="product_name" required maxLength={80} placeholder="Intro class pack" className={field} />
         </label>
-        <label className="flex flex-col gap-2 text-base text-zinc-300">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
           Price in dollars
           <input name="price" type="number" required min={1} max={10000} step="0.01" placeholder="49" className={field} />
         </label>
-        {error && <p role="alert" className="rounded-lg bg-red-950 px-4 py-3 text-base text-red-200">{error}</p>}
+        {error && <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-base text-red-700">{error}</p>}
         <button type="submit" disabled={busy} className={primary}>
           {busy ? "Creating…" : "Create my business"}
         </button>
@@ -100,22 +109,22 @@ function Onboarding({ profile, onDone }: { profile: Profile | null; onDone: () =
 function NewProject({ onDone, onCancel }: { onDone: (id: string) => void; onCancel: () => void }) {
   const { busy, error, submit } = useSubmit("/api/projects", (r) => onDone(r.project_id));
   return (
-    <form onSubmit={submit} className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl bg-zinc-900 p-5 ring-1 ring-zinc-800">
-      <label className="flex min-w-56 flex-1 flex-col gap-2 text-base text-zinc-300">
+    <form onSubmit={submit} className={`mt-3 flex flex-wrap items-end gap-3 p-4 ${CARD}`}>
+      <label className="flex min-w-56 flex-1 flex-col gap-1.5 text-sm font-medium text-slate-700">
         What does this project sell?
         <input name="product_name" required maxLength={80} autoFocus placeholder="Monthly membership" className={field} />
       </label>
-      <label className="flex w-40 flex-col gap-2 text-base text-zinc-300">
+      <label className="flex w-40 flex-col gap-1.5 text-sm font-medium text-slate-700">
         Price in dollars
         <input name="price" type="number" required min={1} max={10000} step="0.01" placeholder="89" className={field} />
       </label>
       <button type="submit" disabled={busy} className={primary}>
         {busy ? "Adding…" : "Add project"}
       </button>
-      <button type="button" onClick={onCancel} className="px-3 py-3 text-lg text-zinc-400 hover:text-white">
+      <button type="button" onClick={onCancel} className="px-3 py-2.5 text-base text-slate-500 hover:text-slate-900">
         Cancel
       </button>
-      {error && <p role="alert" className="w-full text-base text-red-300">{error}</p>}
+      {error && <p role="alert" className="w-full text-base text-red-600">{error}</p>}
     </form>
   );
 }
@@ -209,251 +218,297 @@ export default function Dashboard() {
   }
 
   if (state === "loading") {
-    return <main className="flex flex-1 items-center justify-center bg-zinc-950 text-2xl text-zinc-400">Loading…</main>;
+    return <main className="flex flex-1 items-center justify-center bg-slate-50 text-xl text-slate-500">Loading…</main>;
   }
   if (state === "onboarding") return <Onboarding profile={profile} onDone={() => void loadAccount()} />;
 
   const site = sites.find((s) => s.id === selected) ?? null;
+  const landing = build?.url ?? site?.landing_url ?? "";
 
   return (
-    <main className="flex-1 bg-zinc-950 px-5 py-6 text-white md:px-10 md:py-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Link href="/" className="text-sm font-semibold uppercase tracking-widest text-amber-400">
+    <main className="flex-1 bg-slate-50 text-slate-900">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/85 backdrop-blur">
+        <div className="mx-auto flex max-w-[90rem] flex-wrap items-center justify-between gap-3 px-5 py-3 md:px-8">
+          <Link href="/" className="flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-slate-900">
+            <span className={`flex size-7 items-center justify-center rounded-lg text-white ${BRAND}`}>
+              <Icon name="phone" className="size-4" />
+            </span>
             Agent on Call
           </Link>
-          <h1 className="mt-1 text-4xl font-semibold tracking-tight md:text-5xl">{business?.name}</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-5 text-base text-zinc-400">
-          {profile && (
-            <span>
-              {profile.full_name ?? profile.username}
-              {profile.phone ? ` · calls from •••${profile.phone.slice(-4)}` : ""}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[0.95rem] text-slate-600">
+            {profile && (
+              <span>
+                <span className="font-medium text-slate-900">{profile.full_name ?? profile.username}</span>
+                {profile.phone ? ` · calls from •••${profile.phone.slice(-4)}` : ""}
+              </span>
+            )}
+            <span
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold ${
+                live ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              <span className={`size-2 rounded-full ${live ? "bg-emerald-500" : "bg-slate-400"}`} />
+              {live ? "Live" : "Connecting…"}
             </span>
-          )}
-          <span className="flex items-center gap-2">
-            <span className={`size-2.5 rounded-full ${live ? "bg-emerald-400" : "bg-zinc-600"}`} />
-            {live ? "Live" : "Connecting…"}
-          </span>
-          {profile?.is_admin && (
-            <Link href="/admin" className="font-semibold text-amber-400 underline-offset-4 hover:underline">
-              Admin console
-            </Link>
-          )}
-          <button onClick={signOut} className="underline-offset-4 hover:text-white hover:underline">
-            Sign out
-          </button>
+            {profile?.is_admin && (
+              <Link href="/admin" className="font-semibold text-indigo-600 hover:text-indigo-800">
+                Admin console
+              </Link>
+            )}
+            <button
+              onClick={signOut}
+              className="rounded-full px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
-      <nav aria-label="Projects" className="mt-6 flex flex-wrap items-center gap-2">
-        {sites.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => setSelected(s.id)}
-            aria-current={s.id === selected}
-            className={`rounded-full px-5 py-2.5 text-lg font-semibold transition ${
-              s.id === selected ? "bg-amber-400 text-zinc-950" : "bg-zinc-900 text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-800"
-            }`}
-          >
-            {s.product_name}
-          </button>
-        ))}
-        {!adding && (
-          <button onClick={() => setAdding(true)} className="rounded-full px-4 py-2.5 text-lg text-zinc-400 hover:text-white">
-            + New project
-          </button>
+      <div className="mx-auto max-w-[90rem] px-5 py-5 md:px-8">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{business?.name}</h1>
+          <nav aria-label="Projects" className="flex flex-wrap items-center gap-2">
+            {sites.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setSelected(s.id)}
+                aria-current={s.id === selected}
+                className={`rounded-full px-4 py-1.5 text-[0.95rem] font-semibold transition ${
+                  s.id === selected
+                    ? `text-white shadow-md shadow-fuchsia-500/25 ${BRAND}`
+                    : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                {s.product_name}
+              </button>
+            ))}
+            {!adding && (
+              <button
+                onClick={() => setAdding(true)}
+                className="rounded-full px-3 py-1.5 text-[0.95rem] font-medium text-indigo-600 hover:bg-indigo-50"
+              >
+                + New project
+              </button>
+            )}
+          </nav>
+        </div>
+        {adding && (
+          <NewProject
+            onCancel={() => setAdding(false)}
+            onDone={(id) => {
+              setAdding(false);
+              void loadAccount(id);
+            }}
+          />
         )}
-      </nav>
-      {adding && (
-        <NewProject
-          onCancel={() => setAdding(false)}
-          onDone={(id) => {
-            setAdding(false);
-            void loadAccount(id);
-          }}
-        />
-      )}
 
-      {!site ? (
-        <p className="mt-10 text-xl text-zinc-400">This business has no projects yet. Add one to get started.</p>
-      ) : (
-        <>
-          <p className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-lg text-zinc-300">
-            <span>
-              {site.product_name} · {dollars(site.price_cents)}
-              {site.discount_percent > 0 ? ` (${site.discount_percent}% off now)` : ""}
-            </span>
-            <a href={`/s/${site.slug}`} target="_blank" rel="noreferrer" className="text-amber-400 underline underline-offset-4">
-              Signup page
-            </a>
-            {(build || site.landing_url) && (
-              <span>
-                Landing page:{" "}
-                {build?.status === "building" ? (
-                  <span key="building" className="status-pop inline-block animate-pulse rounded-full bg-sky-400 px-3 py-0.5 font-semibold text-sky-950">
-                    building…
-                  </span>
-                ) : build?.status === "failed" ? (
-                  <span key="failed" className="status-pop inline-block rounded-full bg-red-500 px-3 py-0.5 font-semibold text-white">
-                    build failed
-                  </span>
-                ) : (
-                  <a
-                    key="live"
-                    href={build?.url ?? site.landing_url ?? "#"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="status-pop inline-block font-semibold text-emerald-400 underline underline-offset-4"
-                  >
-                    {(build?.url ?? site.landing_url ?? "").replace("https://", "")}
-                  </a>
-                )}
-              </span>
-            )}
-          </p>
-
-          <p className="mt-3 flex flex-wrap items-center gap-2 text-base text-zinc-400">
-            Automations:
-            {automations.length === 0 ? (
-              <span>none on. Ask the agent to turn on automatic welcomes, reminders or invoices.</span>
-            ) : (
-              automations.map((a) => (
-                <span key={a.id} className="status-pop rounded-full bg-emerald-400/15 px-3 py-1 text-sm font-semibold text-emerald-300">
-                  {AUTOMATION_LABEL[a.kind]}
-                  {a.kind !== "welcome_new_signups" ? ` after ${a.delay_minutes >= 60 ? `${Math.round(a.delay_minutes / 60)}h` : `${a.delay_minutes}m`}` : ""}
+        {!site ? (
+          <p className="mt-8 text-lg text-slate-600">This business has no projects yet. Add one to get started.</p>
+        ) : (
+          <>
+            <section aria-label="Project" className={`mt-4 flex flex-col gap-2.5 px-5 py-4 ${CARD}`}>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-base">
+                <span className="font-semibold">{site.product_name}</span>
+                <span className="text-slate-700">
+                  {dollars(site.price_cents)}
+                  {site.discount_percent > 0 && (
+                    <span className="ml-2 rounded-full bg-rose-50 px-2 py-0.5 text-sm font-semibold text-rose-600">
+                      {site.discount_percent}% off now
+                    </span>
+                  )}
                 </span>
-              ))
-            )}
-          </p>
-
-          <section aria-label="Needs attention" className="mt-6 grid gap-4 md:grid-cols-3">
-            {KINDS.map(({ kind, label }) => {
-              const rows = attention.filter((a) => a.kind === kind);
-              return (
-                <div key={kind} className="rounded-3xl bg-zinc-900 p-6 ring-1 ring-zinc-800">
-                  <p className="text-lg font-medium text-zinc-400">{label}</p>
-                  <p key={rows.length} className="status-pop mt-2 text-7xl font-semibold tabular-nums leading-none">
-                    {rows.length}
-                  </p>
-                  <p className="mt-4 min-h-14 text-lg leading-snug text-zinc-300">
-                    {rows.length === 0
-                      ? "All clear"
-                      : rows.slice(0, 3).map((r) => r.name).join(", ") + (rows.length > 3 ? ` +${rows.length - 3}` : "")}
-                  </p>
-                </div>
-              );
-            })}
-          </section>
-
-          <div className="mt-8 grid gap-8 xl:grid-cols-[1.2fr_1fr]">
-            <section aria-label="Actions feed">
-              <h2 className="text-2xl font-semibold">Actions</h2>
-              <ul className="mt-4 flex flex-col gap-2">
-                {actions.length === 0 && (
-                  <li className="rounded-2xl bg-zinc-900 p-6 text-lg text-zinc-400 ring-1 ring-zinc-800">
-                    Nothing yet. Call the agent and ask what needs your attention.
-                  </li>
+                <a
+                  href={`/s/${site.slug}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:text-indigo-800"
+                >
+                  Signup page <Icon name="arrow" className="size-4" />
+                </a>
+                {(build || site.landing_url) && (
+                  <span className="flex min-w-0 items-center gap-2 text-slate-600">
+                    <Icon name="globe" className="size-4 text-slate-400" />
+                    Landing page:
+                    {build?.status === "building" ? (
+                      <span key="building" className="status-pop inline-block animate-pulse rounded-full bg-sky-100 px-2.5 py-0.5 text-sm font-semibold text-sky-700">
+                        building…
+                      </span>
+                    ) : build?.status === "failed" ? (
+                      <span key="failed" className="status-pop inline-block rounded-full bg-red-100 px-2.5 py-0.5 text-sm font-semibold text-red-700">
+                        build failed
+                      </span>
+                    ) : (
+                      <a
+                        key="live"
+                        href={landing || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="status-pop inline-block truncate font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-4 hover:text-emerald-900"
+                      >
+                        {landing.replace("https://", "")}
+                      </a>
+                    )}
+                  </span>
                 )}
-                {actions.map((a) => (
-                  <li key={a.id} className="row-in rounded-2xl bg-zinc-900 ring-1 ring-zinc-800">
-                    <button
-                      onClick={() => setOpen(open === a.id ? null : a.id)}
-                      aria-expanded={open === a.id}
-                      className="flex w-full items-center gap-4 px-5 py-4 text-left"
-                    >
-                      <span className="w-20 shrink-0 text-lg font-semibold text-amber-400">{TYPE_LABEL[a.type]}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xl font-medium">
-                          {a.customers?.name ?? "Customer"}
-                          {a.source === "automation" && (
-                            <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 align-middle text-xs font-semibold text-emerald-300">auto</span>
-                          )}
-                        </span>
-                        <span className="block truncate text-base text-zinc-400">
-                          {a.type === "sms" || a.type === "call" ? a.customers?.phone : a.customers?.email}
-                          {a.type === "invoice" && a.payload.amount_cents ? ` · ${dollars(a.payload.amount_cents)}` : ""}
-                          {` · ${time(a.created_at)}`}
-                        </span>
-                      </span>
-                      <span key={a.status} className={`status-pop shrink-0 rounded-full px-4 py-1.5 text-base font-semibold ${STATUS_STYLE[a.status]}`}>
-                        {a.status}
-                      </span>
-                    </button>
-                    {open === a.id && (
-                      <div className="border-t border-zinc-800 px-5 py-4 text-base leading-relaxed text-zinc-300">
-                        {a.payload.subject && <p className="font-semibold text-white">{a.payload.subject}</p>}
-                        <p className="mt-1 whitespace-pre-wrap">{a.payload.body}</p>
-                        {typeof a.result?.hosted_invoice_url === "string" && (
-                          <a href={a.result.hosted_invoice_url} target="_blank" rel="noreferrer" className="mt-3 inline-block text-emerald-400 underline underline-offset-4">
-                            View Stripe invoice
-                          </a>
-                        )}
-                        {typeof a.result?.error === "string" && <p className="mt-3 text-red-300">Error: {a.result.error}</p>}
-                        {typeof a.result?.note === "string" && <p className="mt-3 text-zinc-400">{a.result.note}</p>}
-                        {typeof a.result?.reason === "string" && (
-                          <p className="mt-3 text-violet-300">Not sent: {a.result.reason} (demo data).</p>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section aria-label="Customers and orders">
-              <h2 className="text-2xl font-semibold">Customers</h2>
-              <div className="mt-4 overflow-x-auto rounded-2xl bg-zinc-900 ring-1 ring-zinc-800">
-                <table className="w-full text-left text-lg">
-                  <thead className="text-base text-zinc-400">
-                    <tr>
-                      <th className="px-5 py-3 font-medium">Name</th>
-                      <th className="px-5 py-3 font-medium">Welcomed</th>
-                      <th className="px-5 py-3 font-medium">Order</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customers.length === 0 && (
-                      <tr>
-                        <td colSpan={3} className="px-5 py-6 text-zinc-400">
-                          No customers yet. Share this project&rsquo;s signup page to get your first one.
-                        </td>
-                      </tr>
-                    )}
-                    {customers.map((c) => {
-                      const paid = c.orders.some((o) => o.status === "paid");
-                      const pending = c.orders.filter((o) => o.status === "pending");
-                      const order = pending.length
-                        ? { text: `Unpaid ${dollars(pending.reduce((s, o) => s + o.amount_cents, 0))}`, style: "text-amber-400" }
-                        : paid
-                          ? { text: "Paid", style: "text-emerald-400" }
-                          : { text: "No order", style: "text-zinc-500" };
-                      return (
-                        <tr key={c.id} className="row-in border-t border-zinc-800">
-                          <td className="px-5 py-3">
-                            <span className="block font-medium">{c.name}</span>
-                            <span className="block text-base text-zinc-400">{c.email}</span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <span key={String(!!c.welcomed_at)} className={`status-pop inline-block ${c.welcomed_at ? "text-emerald-400" : "text-zinc-500"}`}>
-                              {c.welcomed_at ? "Yes" : "Not yet"}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3">
-                            <span key={order.text} className={`status-pop inline-block font-semibold ${order.style}`}>
-                              {order.text}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[0.95rem] text-slate-600">
+                <span className="font-medium text-slate-700">Automations:</span>
+                {automations.length === 0 ? (
+                  <span>none on. Ask the agent to turn on automatic welcomes, reminders or invoices.</span>
+                ) : (
+                  automations.map((a) => (
+                    <span key={a.id} className="status-pop rounded-full bg-emerald-50 px-2.5 py-0.5 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      {AUTOMATION_LABEL[a.kind]}
+                      {a.kind !== "welcome_new_signups" ? ` after ${a.delay_minutes >= 60 ? `${Math.round(a.delay_minutes / 60)}h` : `${a.delay_minutes}m`}` : ""}
+                    </span>
+                  ))
+                )}
               </div>
             </section>
-          </div>
-        </>
-      )}
+
+            <section aria-label="Needs attention" className="mt-4 grid gap-4 md:grid-cols-3">
+              {KINDS.map(({ kind, label, icon, tone }) => {
+                const rows = attention.filter((a) => a.kind === kind);
+                return (
+                  <div key={kind} className={`flex items-start gap-4 p-5 ${CARD}`}>
+                    <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${tone}`}>
+                      <Icon name={icon} className="size-6" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="text-base font-medium text-slate-600">{label}</p>
+                        <p key={rows.length} className="status-pop text-4xl font-semibold tabular-nums leading-none">
+                          {rows.length}
+                        </p>
+                      </div>
+                      <p className="mt-2 truncate text-[0.95rem] text-slate-700">
+                        {rows.length === 0
+                          ? "All clear"
+                          : rows.slice(0, 3).map((r) => r.name).join(", ") + (rows.length > 3 ? ` +${rows.length - 3}` : "")}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_1fr]">
+              <section aria-label="Actions feed">
+                <h2 className="text-xl font-semibold">Actions</h2>
+                <ul className={`mt-3 divide-y divide-slate-100 overflow-hidden ${CARD}`}>
+                  {actions.length === 0 && (
+                    <li className="px-5 py-5 text-base text-slate-600">
+                      Nothing yet. Call the agent and ask what needs your attention.
+                    </li>
+                  )}
+                  {actions.map((a) => (
+                    <li key={a.id} className="row-in">
+                      <button
+                        onClick={() => setOpen(open === a.id ? null : a.id)}
+                        aria-expanded={open === a.id}
+                        className="flex w-full items-center gap-3.5 px-4 py-3 text-left transition hover:bg-slate-50"
+                      >
+                        <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${TYPE[a.type].tone}`} title={TYPE[a.type].label}>
+                          <Icon name={TYPE[a.type].icon} className="size-[1.1rem]" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-base font-semibold">
+                            {a.customers?.name ?? "Customer"}
+                            <span className="ml-2 text-sm font-medium text-slate-500">{TYPE[a.type].label}</span>
+                            {a.source === "automation" && (
+                              <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 align-middle text-xs font-semibold text-emerald-700">auto</span>
+                            )}
+                          </span>
+                          <span className="block truncate text-sm text-slate-600">
+                            {a.type === "sms" || a.type === "call" ? a.customers?.phone : a.customers?.email}
+                            {a.type === "invoice" && a.payload.amount_cents ? ` · ${dollars(a.payload.amount_cents)}` : ""}
+                            {` · ${time(a.created_at)}`}
+                          </span>
+                        </span>
+                        <span key={a.status} className={`status-pop shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${STATUS_STYLE[a.status]}`}>
+                          {a.status}
+                        </span>
+                      </button>
+                      {open === a.id && (
+                        <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-[0.95rem] leading-relaxed text-slate-700">
+                          {a.payload.subject && <p className="font-semibold text-slate-900">{a.payload.subject}</p>}
+                          <p className="mt-1 whitespace-pre-wrap">{a.payload.body}</p>
+                          {typeof a.result?.hosted_invoice_url === "string" && (
+                            <a href={a.result.hosted_invoice_url} target="_blank" rel="noreferrer" className="mt-3 inline-block font-medium text-emerald-700 underline underline-offset-4">
+                              View Stripe invoice
+                            </a>
+                          )}
+                          {typeof a.result?.error === "string" && <p className="mt-3 text-red-600">Error: {a.result.error}</p>}
+                          {typeof a.result?.note === "string" && <p className="mt-3 text-slate-500">{a.result.note}</p>}
+                          {typeof a.result?.reason === "string" && (
+                            <p className="mt-3 text-violet-700">Not sent: {a.result.reason} (demo data).</p>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <section aria-label="Customers and orders">
+                <h2 className="text-xl font-semibold">Customers</h2>
+                <div className={`mt-3 overflow-x-auto ${CARD}`}>
+                  <table className="w-full text-left text-base">
+                    <thead className="bg-slate-50 text-sm text-slate-600">
+                      <tr>
+                        <th className="px-4 py-2.5 font-semibold">Name</th>
+                        <th className="px-4 py-2.5 font-semibold">Welcomed</th>
+                        <th className="px-4 py-2.5 font-semibold">Order</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customers.length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-5 text-slate-600">
+                            No customers yet. Share this project&rsquo;s signup page to get your first one.
+                          </td>
+                        </tr>
+                      )}
+                      {customers.map((c) => {
+                        const paid = c.orders.some((o) => o.status === "paid");
+                        const pending = c.orders.filter((o) => o.status === "pending");
+                        const order = pending.length
+                          ? { text: `Unpaid ${dollars(pending.reduce((s, o) => s + o.amount_cents, 0))}`, style: "bg-amber-50 text-amber-700" }
+                          : paid
+                            ? { text: "Paid", style: "bg-emerald-50 text-emerald-700" }
+                            : { text: "No order", style: "bg-slate-100 text-slate-600" };
+                        return (
+                          <tr key={c.id} className="row-in border-t border-slate-100">
+                            <td className="px-4 py-2.5">
+                              <span className="block font-semibold">{c.name}</span>
+                              <span className="block text-sm text-slate-600">{c.email}</span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span
+                                key={String(!!c.welcomed_at)}
+                                className={`status-pop inline-flex items-center gap-1 text-[0.95rem] font-medium ${c.welcomed_at ? "text-emerald-700" : "text-slate-500"}`}
+                              >
+                                {c.welcomed_at && <Icon name="check" className="size-4" />}
+                                {c.welcomed_at ? "Yes" : "Not yet"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span key={order.text} className={`status-pop inline-block rounded-full px-2.5 py-0.5 text-sm font-semibold ${order.style}`}>
+                                {order.text}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </>
+        )}
+      </div>
     </main>
   );
 }
