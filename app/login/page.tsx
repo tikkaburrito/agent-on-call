@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { USERNAME, usernameToEmail } from "@/lib/auth";
+import { EMAIL, isEmail, loginEmail, USERNAME } from "@/lib/auth";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 export default function Login() {
@@ -24,9 +24,9 @@ export default function Login() {
     const username = String(form.get("username") ?? "").trim().toLowerCase();
     const password = String(form.get("password") ?? "");
 
-    if (!USERNAME.test(username)) {
+    if (isEmail(username) ? !EMAIL.test(username) : !USERNAME.test(username)) {
       setBusy(false);
-      return setError("Usernames are 3 to 24 characters: lowercase letters, numbers and underscores.");
+      return setError("Enter your email address, or a username of 3 to 24 lowercase letters, numbers and underscores.");
     }
     if (mode === "signup") {
       const res = await fetch("/api/signup", {
@@ -39,10 +39,10 @@ export default function Login() {
         return setError((await res.json().catch(() => ({}))).error ?? "Could not create the account.");
       }
     }
-    const { error } = await supabaseBrowser().auth.signInWithPassword({ email: usernameToEmail(username), password });
+    const { error } = await supabaseBrowser().auth.signInWithPassword({ email: loginEmail(username), password });
     if (error) {
       setBusy(false);
-      return setError("That username and password don't match.");
+      return setError("That email or username and password don't match.");
     }
     router.replace("/dashboard");
   }
@@ -80,14 +80,16 @@ export default function Login() {
             </>
           )}
           <label className={label}>
-            Username
+            Email or username
             <input
               name="username"
               required
               autoFocus
               autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               autoComplete="username"
-              placeholder="yourname"
+              placeholder="you@example.com"
               className={input}
             />
           </label>
