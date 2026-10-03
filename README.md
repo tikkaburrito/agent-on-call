@@ -126,6 +126,11 @@ bash scripts/deploy-vercel.sh     # production; copies the env vars the app need
 npx tsx vapi/setup.ts --attach    # creates/updates tools + assistant, attaches the phone number
 ```
 
+```bash
+# Or all of the key-dependent steps in one go (skips what is still missing)
+bash scripts/go-live.sh
+```
+
 Then create an account at `/login` with the mobile you will call from, add your business, call the Vapi number and say "What's going on?" To call as the demo owner instead, set `OWNER_PHONE` and re-run `bash scripts/seed.sh`.
 
 ### Tests

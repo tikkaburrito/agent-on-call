@@ -24,18 +24,22 @@
 
 ## MANUAL (things only you can do)
 
-- [ ] MANUAL: fill these in `.env.local` (nothing external can be tested until they exist):
-  - `ANTHROPIC_API_KEY`
-  - `STRIPE_SECRET_KEY` (test mode, `sk_test_...`)
-  - `RESEND_API_KEY`, `RESEND_FROM` (your Resend account has `tikkaburrito.com` verified, so e.g. `Agent on Call <agent@tikkaburrito.com>`)
-  - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` (E.164)
-  - `VAPI_API_KEY` (private key)
-  - `VERCEL_TOKEN` (vercel.com/account/tokens) and `VERCEL_TEAM_ID=team_BUhGvL1REv0fT0pL02shzlH7`: still needed by the site builder, which deploys landing pages from an edge function. The main app no longer needs it (CLI is logged in).
-  - `OWNER_PHONE` (E.164, the phone you will call from; makes the demo business answer to it), optional `NEXT_PUBLIC_AGENT_PHONE` (the Vapi number, shown on the home page)
-  - `SEND_ALLOWLIST` (comma-separated emails and E.164 phones that may receive real sends; include your own)
-- [ ] MANUAL: after adding keys, run `bash scripts/deploy-vercel.sh` so `STRIPE_SECRET_KEY` reaches Vercel (it redeploys).
-- [ ] MANUAL: make sure a phone number exists in your Vapi account. `npx tsx vapi/setup.ts --attach` attaches it if there is exactly one.
-- [ ] MANUAL: confirm your Twilio number can text US mobiles (trial accounts only reach verified numbers).
+Everything below is "paste a value into `.env.local`", then run `bash scripts/go-live.sh` once.
+Nothing in Vapi, Stripe, Twilio or Resend needs to be configured by hand beyond getting the key.
+
+| Line in `.env.local` | Where to get it | What it turns on |
+|---|---|---|
+| `STRIPE_SECRET_KEY=sk_test_...` | dashboard.stripe.com → switch to **Test mode** → Developers → API keys → Secret key | Checkout on every signup page, invoices from the agent |
+| `VAPI_API_KEY=...` | dashboard.vapi.ai → your org → API Keys → **Private** key | The voice agent: `go-live.sh` creates the 6 tools and the assistant and attaches your number |
+| (in Vapi) one phone number | dashboard.vapi.ai → Phone Numbers → Create (a free Vapi number is fine) | The number you call |
+| `ANTHROPIC_API_KEY=sk-ant-...` | console.anthropic.com → API keys | Drafted email/text copy and landing page copy (templates are used without it) |
+| `RESEND_API_KEY=re_...` and `RESEND_FROM=Agent on Call <agent@tikkaburrito.com>` | resend.com → API Keys (`tikkaburrito.com` is already verified there) | Real emails |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM=+1...` | console.twilio.com → Account info; Phone Numbers → your number | Real texts |
+| `VERCEL_TOKEN=...` | vercel.com/account/tokens → Create | The agent's landing-page builder (`VERCEL_TEAM_ID` is already filled in) |
+| `SEND_ALLOWLIST=you@example.com,+1XXXXXXXXXX` | your own email and mobile, comma-separated | Who may receive real sends; everyone else is "simulated" |
+| `NEXT_PUBLIC_AGENT_PHONE=+1...` (optional) | the Vapi number | Shows "Call ..." on the home page |
+
+About Vapi and Supabase: Vapi's own "Supabase" integration is for storing call recordings. It does not let the assistant read the database. The assistant reads data only by calling our `vapi-tools` function with the `x-vapi-secret` header, which `vapi/setup.ts` configures. Tools created by hand in the Vapi dashboard without that header get `401` and see nothing.
 
 ## Notes
 
