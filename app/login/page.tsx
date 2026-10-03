@@ -1,110 +1,132 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { USERNAME, usernameToEmail } from "@/lib/auth";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 export default function Login() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function sendCode(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const { error } = await supabaseBrowser().auth.signInWithOtp({ email: email.trim() });
-    setBusy(false);
-    if (error) return setError(error.message);
-    setStep("code");
-  }
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("mode") === "signup") setMode("signup");
+  }, []);
 
-  async function verify(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { error } = await supabaseBrowser().auth.verifyOtp({
-      email: email.trim(),
-      token: code.trim(),
-      type: "email",
-    });
+    const form = new FormData(e.currentTarget);
+    const username = String(form.get("username") ?? "").trim().toLowerCase();
+    const password = String(form.get("password") ?? "");
+
+    if (!USERNAME.test(username)) {
+      setBusy(false);
+      return setError("Usernames are 3 to 24 characters: lowercase letters, numbers and underscores.");
+    }
+    if (mode === "signup") {
+      const res = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, full_name: form.get("full_name"), phone: form.get("phone") }),
+      });
+      if (!res.ok) {
+        setBusy(false);
+        return setError((await res.json().catch(() => ({}))).error ?? "Could not create the account.");
+      }
+    }
+    const { error } = await supabaseBrowser().auth.signInWithPassword({ email: usernameToEmail(username), password });
     if (error) {
       setBusy(false);
-      return setError("That code didn't work. Check it and try again.");
+      return setError("That username and password don't match.");
     }
-    await fetch("/api/claim", { method: "POST" });
     router.replace("/dashboard");
   }
 
   const input =
     "w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3.5 text-lg text-white placeholder:text-zinc-500 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30";
-  const button =
-    "rounded-xl bg-amber-400 px-5 py-3.5 text-lg font-semibold text-zinc-950 transition hover:bg-amber-300 disabled:opacity-60";
+  const label = "flex flex-col gap-2 text-base text-zinc-300";
 
   return (
     <main className="flex flex-1 items-center justify-center bg-zinc-950 px-5 py-16 text-white">
       <div className="w-full max-w-md">
-        <p className="text-sm font-semibold uppercase tracking-widest text-amber-400">Agent on Call</p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight">Owner sign in</h1>
+        <Link href="/" className="text-sm font-semibold uppercase tracking-widest text-amber-400">
+          Agent on Call
+        </Link>
+        <h1 className="mt-3 text-4xl font-semibold tracking-tight">
+          {mode === "signin" ? "Sign in" : "Create your account"}
+        </h1>
+        <p className="mt-3 text-lg text-zinc-400">
+          {mode === "signin"
+            ? "See your business, projects and what the agent has done."
+            : "The agent recognises you by the phone you call from."}
+        </p>
 
-        {step === "email" ? (
-          <form onSubmit={sendCode} className="mt-8 flex flex-col gap-4">
-            <label className="flex flex-col gap-2 text-base text-zinc-300">
-              Email
-              <input
-                type="email"
-                required
-                autoFocus
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@yourbusiness.com"
-                className={input}
-              />
-            </label>
-            <button type="submit" disabled={busy} className={button}>
-              {busy ? "Sending…" : "Email me a code"}
-            </button>
-            <button
-              type="button"
-              onClick={() => email.trim() && setStep("code")}
-              className="text-base text-zinc-400 underline-offset-4 hover:underline"
-            >
-              I already have a code
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={verify} className="mt-8 flex flex-col gap-4">
-            <label className="flex flex-col gap-2 text-base text-zinc-300">
-              Code sent to {email}
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                required
-                autoFocus
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                placeholder="123456"
-                className={`${input} font-mono tracking-[0.3em]`}
-              />
-            </label>
-            <button type="submit" disabled={busy} className={button}>
-              {busy ? "Checking…" : "Sign in"}
-            </button>
-            <button type="button" onClick={() => setStep("email")} className="text-base text-zinc-400 underline-offset-4 hover:underline">
-              Use a different email
-            </button>
-          </form>
-        )}
+        <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4">
+          {mode === "signup" && (
+            <>
+              <label className={label}>
+                Your name
+                <input name="full_name" required maxLength={80} autoComplete="name" placeholder="Dana Brooks" className={input} />
+              </label>
+              <label className={label}>
+                Mobile you&rsquo;ll call from
+                <input name="phone" type="tel" required autoComplete="tel" placeholder="(415) 555-0123" className={input} />
+              </label>
+            </>
+          )}
+          <label className={label}>
+            Username
+            <input
+              name="username"
+              required
+              autoFocus
+              autoCapitalize="none"
+              autoComplete="username"
+              placeholder="yourname"
+              className={input}
+            />
+          </label>
+          <label className={label}>
+            Password
+            <input
+              name="password"
+              type="password"
+              required
+              minLength={8}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              placeholder={mode === "signin" ? "Your password" : "At least 8 characters"}
+              className={input}
+            />
+          </label>
+          {error && (
+            <p role="alert" className="rounded-lg bg-red-950 px-4 py-3 text-base text-red-200">
+              {error}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-xl bg-amber-400 px-5 py-3.5 text-lg font-semibold text-zinc-950 transition hover:bg-amber-300 disabled:opacity-60"
+          >
+            {busy ? "One moment…" : mode === "signin" ? "Sign in" : "Create account"}
+          </button>
+        </form>
 
-        {error && (
-          <p role="alert" className="mt-4 rounded-lg bg-red-950 px-4 py-3 text-base text-red-200">
-            {error}
-          </p>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            setMode(mode === "signin" ? "signup" : "signin");
+            setError(null);
+          }}
+          className="mt-6 text-base text-zinc-400 underline-offset-4 hover:text-white hover:underline"
+        >
+          {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
+        </button>
       </div>
     </main>
   );

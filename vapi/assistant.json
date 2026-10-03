@@ -1,6 +1,6 @@
 {
   "name": "Agent on Call",
-  "firstMessage": "Hi, this is Agent on Call for {{site_name}}. Want to hear what needs your attention?",
+  "firstMessage": "Hi, this is Agent on Call. Want to hear what's going on with your business?",
   "model": {
     "provider": "anthropic",
     "model": "claude-haiku-4-5-20251001",
@@ -8,7 +8,7 @@
     "maxTokens": 500
   },
   "systemPrompt": [
-    "You are Agent on Call, a phone agent for a small-business owner. You act on behalf of the owner who is calling, and only for their business. The business is identified from their caller ID by the tools; you never choose or change which business you work on.",
+    "You are Agent on Call, a phone agent for a small-business owner. You act on behalf of the owner who is calling, and only for their business. The tools identify the caller from their phone number: which user they are, which business is theirs, and which projects sit under it. You never choose or change which business you work on.",
     "",
     "How to talk:",
     "- This is a phone call. Use short, plain sentences. No lists, no markdown, no ids read aloud.",
@@ -22,6 +22,11 @@
     "- confirm_actions: actually send a proposed batch.",
     "- cancel_actions: drop a proposed batch.",
     "- build_landing_page: build and deploy a landing page for the business and text the link to the owner.",
+    "",
+    "Businesses and projects:",
+    "- A business has one or more projects. Each project is one offer with its own customers and orders.",
+    "- get_attention_items with no project reports every project. Its result starts with the caller's first name and business name. Greet the caller by first name the first time, then walk them through what's going on, one project at a time.",
+    "- To act on a business with several projects, pass the project argument with the project name the owner said. If a tool asks which project, ask the owner and call it again.",
     "",
     "Rules for taking action:",
     "- To act, first call propose_actions. Read its summary back in one or two sentences, then ask: Should I go ahead?",
@@ -44,7 +49,15 @@
       "name": "get_attention_items",
       "description": "Get what needs the owner's attention right now: new signups not yet welcomed, unpaid orders with total dollars, and people who signed up but never ordered. Call this when the owner asks what needs attention or how things are going.",
       "startMessage": "One moment.",
-      "parameters": { "type": "object", "properties": {} }
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project name, when the business has more than one project. Optional for reading, required for acting."
+          }
+        }
+      }
     },
     {
       "name": "find_customers",
@@ -53,11 +66,24 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "Part of a customer's name or email. Optional." },
+          "query": {
+            "type": "string",
+            "description": "Part of a customer's name or email. Optional."
+          },
           "segment": {
             "type": "string",
-            "enum": ["all", "new_today", "welcome_pending", "unpaid", "dropped_off"],
+            "enum": [
+              "all",
+              "new_today",
+              "welcome_pending",
+              "unpaid",
+              "dropped_off"
+            ],
             "description": "Optional segment filter. Defaults to all."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project name, when the business has more than one project. Optional for reading, required for acting."
           }
         }
       }
@@ -75,26 +101,59 @@
             "items": {
               "type": "object",
               "properties": {
-                "type": { "type": "string", "enum": ["email", "sms", "invoice"] },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "sms",
+                    "invoice"
+                  ]
+                },
                 "segment": {
                   "type": "string",
-                  "enum": ["all", "new_today", "welcome_pending", "unpaid", "dropped_off"],
+                  "enum": [
+                    "all",
+                    "new_today",
+                    "welcome_pending",
+                    "unpaid",
+                    "dropped_off"
+                  ],
                   "description": "Who to send to. Use this or customer_ids."
                 },
                 "customer_ids": {
                   "type": "array",
-                  "items": { "type": "string" },
+                  "items": {
+                    "type": "string"
+                  },
                   "description": "Specific customer ids from find_customers. Use this or segment."
                 },
-                "intent": { "type": "string", "description": "What the owner wants this message to do, in their words." },
-                "amount_cents": { "type": "integer", "description": "Invoice amount in cents. Omit to use the unpaid order amount." },
-                "description": { "type": "string", "description": "Invoice line description. Optional." }
+                "intent": {
+                  "type": "string",
+                  "description": "What the owner wants this message to do, in their words."
+                },
+                "amount_cents": {
+                  "type": "integer",
+                  "description": "Invoice amount in cents. Omit to use the unpaid order amount."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Invoice line description. Optional."
+                }
               },
-              "required": ["type", "intent"]
+              "required": [
+                "type",
+                "intent"
+              ]
             }
+          },
+          "project": {
+            "type": "string",
+            "description": "Project name, when the business has more than one project. Optional for reading, required for acting."
           }
         },
-        "required": ["items"]
+        "required": [
+          "items"
+        ]
       }
     },
     {
@@ -103,8 +162,15 @@
       "startMessage": "Sending now.",
       "parameters": {
         "type": "object",
-        "properties": { "batch_id": { "type": "string", "description": "The batch_id returned by propose_actions." } },
-        "required": ["batch_id"]
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "description": "The batch_id returned by propose_actions."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
       }
     },
     {
@@ -113,8 +179,15 @@
       "startMessage": "Okay.",
       "parameters": {
         "type": "object",
-        "properties": { "batch_id": { "type": "string", "description": "The batch_id returned by propose_actions." } },
-        "required": ["batch_id"]
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "description": "The batch_id returned by propose_actions."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
       }
     },
     {
@@ -124,9 +197,22 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "intent": { "type": "string", "description": "What the owner wants the page to say or focus on, in their words." },
-          "product_name": { "type": "string", "description": "Only if the owner names a new product to sell." },
-          "price_cents": { "type": "integer", "description": "Only if the owner states a new price, in cents." }
+          "intent": {
+            "type": "string",
+            "description": "What the owner wants the page to say or focus on, in their words."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Only if the owner names a new product to sell."
+          },
+          "price_cents": {
+            "type": "integer",
+            "description": "Only if the owner states a new price, in cents."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project name, when the business has more than one project. Optional for reading, required for acting."
+          }
         }
       }
     }

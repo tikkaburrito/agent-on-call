@@ -1,7 +1,7 @@
 // Runs an approved batch. Called by confirm_actions with the service key.
 import { isAllowed } from "../_shared/allowlist.ts";
 import { invoiceSms } from "../_shared/copy.ts";
-import { type ActionRow, type Customer, db, isInternalCall, type Site } from "../_shared/db.ts";
+import { type ActionRow, type Customer, db, isInternalCall, type Site, SITE_COLUMNS } from "../_shared/db.ts";
 import { sendEmail, sendSms } from "../_shared/send.ts";
 import { createInvoice } from "../_shared/stripe.ts";
 
@@ -128,7 +128,7 @@ async function runBatch(batchId: string) {
 
   const siteId = actions[0].site_id;
   const [{ data: site }, { data: customers }] = await Promise.all([
-    db.from("sites").select("id, owner_phone, name, slug, product_name, price_cents, landing_url").eq("id", siteId).single(),
+    db.from("sites").select(SITE_COLUMNS).eq("id", siteId).single(),
     db.from("customers").select("id, site_id, name, email, phone, consent, welcomed_at").eq("site_id", siteId)
       .in("id", [...new Set(actions.map((a) => a.customer_id))]),
   ]);
@@ -141,7 +141,7 @@ async function runBatch(batchId: string) {
       if (!site || !customer) throw new Error("customer not found for this site");
       if (action.type === "email") outcome = await runEmail(action, customer);
       else if (action.type === "sms") outcome = await runSms(action, customer);
-      else outcome = await runInvoice(action, customer, site as Site);
+      else outcome = await runInvoice(action, customer, site as unknown as Site);
     } catch (e) {
       // One failure never stops the rest of the batch.
       outcome = { status: "failed", result: { error: (e as Error).message } };

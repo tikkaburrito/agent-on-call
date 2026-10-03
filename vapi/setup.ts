@@ -4,7 +4,7 @@
 //   npx tsx vapi/setup.ts            create/update, print the assistant id
 //   npx tsx vapi/setup.ts --attach   also attach the account's only phone number
 import { readFileSync } from "node:fs";
-import { admin, env, SITE_A } from "../scripts/_env";
+import { env } from "../scripts/_env";
 
 const API = "https://api.vapi.ai";
 
@@ -54,10 +54,9 @@ async function main() {
   }
 
   // Assistant
-  const { data: site } = await admin().from("sites").select("name").eq("id", SITE_A).single();
   const assistantBody = {
     name: config.name,
-    firstMessage: config.firstMessage.replace("{{site_name}}", site?.name ?? "your business"),
+    firstMessage: config.firstMessage,
     firstMessageMode: "assistant-speaks-first",
     model: {
       ...config.model,

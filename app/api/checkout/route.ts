@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { toE164 } from "@/lib/auth";
 import { DEMO_SITE_ID } from "@/lib/types";
 
 // Public endpoint: the booking page on this app and every landing page the
@@ -16,15 +17,6 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: CORS });
-}
-
-function toE164(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const digits = raw.replace(/\D/g, "");
-  if (raw.trim().startsWith("+") && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return null;
 }
 
 export function OPTIONS() {
@@ -53,7 +45,7 @@ export async function POST(request: Request) {
   const db = supabaseAdmin();
   const { data: site } = await db
     .from("sites")
-    .select("id, name, product_name, price_cents, landing_url")
+    .select("id, name, slug, product_name, price_cents, landing_url")
     .eq("id", siteId)
     .maybeSingle();
   if (!site) return json({ error: "Unknown site." }, 404);
@@ -90,7 +82,7 @@ export async function POST(request: Request) {
       ],
       metadata: { order_id: order.id, site_id: site.id },
       success_url: `${appUrl}/success?site=${site.id}`,
-      cancel_url: site.landing_url || appUrl,
+      cancel_url: site.landing_url || `${appUrl}/s/${site.slug}`,
     });
     await db.from("orders").update({ stripe_checkout_session_id: session.id }).eq("id", order.id);
     return json({ url: session.url });

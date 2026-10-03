@@ -189,7 +189,7 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 30
+email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -225,27 +225,6 @@ max_frequency = "1s"
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
-
-# Owner login is a 6-digit email code, so both templates carry {{ .Token }}.
-[auth.email.template.magic_link]
-subject = "Your Agent on Call sign-in code"
-content_path = "./supabase/templates/otp.html"
-
-[auth.email.template.confirmation]
-subject = "Your Agent on Call sign-in code"
-content_path = "./supabase/templates/otp.html"
-
-# Auth emails go out through Resend. Supabase's built-in mailer only reaches
-# project members and cannot use a custom template.
-# Push with: bash scripts/push-auth-config.sh
-[auth.email.smtp]
-enabled = true
-host = "smtp.resend.com"
-port = 465
-user = "resend"
-pass = "env(RESEND_API_KEY)"
-admin_email = "env(RESEND_FROM_EMAIL)"
-sender_name = "Agent on Call"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]

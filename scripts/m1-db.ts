@@ -1,7 +1,7 @@
 // M1 acceptance + QA 14.1 (RLS): npx tsx scripts/m1-db.ts
 import { admin, anon, check, finish, SITE_A, SITE_B } from "./_env";
 
-const TABLES = ["sites", "customers", "orders", "actions", "site_builds", "stripe_events"];
+const TABLES = ["profiles", "businesses", "sites", "customers", "orders", "actions", "site_builds", "stripe_events"];
 
 async function main() {
   const db = admin();
@@ -28,14 +28,14 @@ async function main() {
   const stamp = Date.now();
   const password = `Test-${stamp}-${Math.random().toString(36).slice(2)}`;
   const users: string[] = [];
-  const { data: before } = await db.from("sites").select("id, owner_id").in("id", [SITE_A, SITE_B]);
+  const { data: before } = await db.from("businesses").select("id, owner_id").in("id", [SITE_A, SITE_B]);
   try {
     const mk = async (label: string, siteId: string) => {
       const email = `qa-${label}-${stamp}@example.com`;
       const { data, error } = await db.auth.admin.createUser({ email, password, email_confirm: true });
       if (error) throw error;
       users.push(data.user.id);
-      await db.from("sites").update({ owner_id: data.user.id }).eq("id", siteId);
+      await db.from("businesses").update({ owner_id: data.user.id }).eq("id", siteId);
       const client = anon();
       const signIn = await client.auth.signInWithPassword({ email, password });
       if (signIn.error) throw signIn.error;
@@ -45,11 +45,17 @@ async function main() {
     const b = await mk("b", SITE_B);
 
     const aSites = await a.from("sites").select("id");
-    check("owner A sees exactly their site", aSites.data?.length === 1 && aSites.data[0].id === SITE_A);
+    check(
+      "owner A sees exactly their business's projects",
+      aSites.data?.length === 2 && aSites.data.every((r) => r.id !== SITE_B),
+      `${aSites.data?.length} projects`,
+    );
+    const aBusinesses = await a.from("businesses").select("id");
+    check("owner A sees exactly their business", aBusinesses.data?.length === 1 && aBusinesses.data[0].id === SITE_A);
     const aCustomers = await a.from("customers").select("site_id");
     check(
       "owner A reads own customers only",
-      (aCustomers.data?.length ?? 0) >= 8 && aCustomers.data!.every((r) => r.site_id === SITE_A),
+      (aCustomers.data?.length ?? 0) >= 19 && aCustomers.data!.every((r) => r.site_id !== SITE_B),
       `${aCustomers.data?.length} rows`,
     );
     const aOrdersB = await a.from("orders").select("id").eq("site_id", SITE_B);
@@ -66,7 +72,7 @@ async function main() {
       `${bCustomers.data?.length} rows`,
     );
   } finally {
-    for (const row of before ?? []) await db.from("sites").update({ owner_id: row.owner_id }).eq("id", row.id);
+    for (const row of before ?? []) await db.from("businesses").update({ owner_id: row.owner_id }).eq("id", row.id);
     for (const id of users) await db.auth.admin.deleteUser(id);
   }
   finish();

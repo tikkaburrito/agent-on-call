@@ -1,10 +1,12 @@
-// Agent tools. Plain async functions (siteId, args) => one spoken line.
-// The agent touches data only through these, always scoped to siteId.
+// Agent tools. Each returns one spoken line. The agent touches data only
+// through these, always inside the caller's own business (CallerContext).
 import { type DraftRequest, draftCopy, personalize } from "./copy.ts";
 import {
   ATTENTION_MINUTES,
+  type CallerContext,
   db,
   dollars,
+  firstName,
   FUNCTIONS_URL,
   keepAlive,
   SERVICE_KEY,
@@ -30,15 +32,23 @@ const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function getSite(siteId: string): Promise<Site> {
-  const { data, error } = await db
-    .from("sites")
-    .select("id, owner_phone, name, slug, product_name, price_cents, landing_url")
-    .eq("id", siteId)
-    .single();
-  if (error || !data) throw new Error("site not found");
-  return data as Site;
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+// One project: always that one. Several: match the spoken project name.
+export function pickSite(ctx: CallerContext, project: unknown): Site | null {
+  if (ctx.sites.length === 1) return ctx.sites[0];
+  if (typeof project !== "string" || !norm(project)) return null;
+  const q = norm(project);
+  const matches = ctx.sites.filter((s) => {
+    const name = norm(s.product_name);
+    return name.includes(q) || q.includes(name) || norm(s.slug).includes(q);
+  });
+  return matches.length === 1 ? matches[0] : null;
 }
+
+const whichProject = (ctx: CallerContext) =>
+  `${ctx.business.name} has ${ctx.sites.length} projects: ${ctx.sites.map((s) => s.product_name).join(", ")}. ` +
+  `Ask the owner which project they mean, then call this tool again with the project argument.`;
 
 async function findCustomers(siteId: string, query: string | null, segment: string): Promise<Found[]> {
   const { data, error } = await db.rpc("find_customers", {
@@ -52,11 +62,11 @@ async function findCustomers(siteId: string, query: string | null, segment: stri
 
 // ---------------------------------------------------------------- get_attention_items
 
-export async function get_attention_items(siteId: string): Promise<string> {
+async function attentionFor(siteId: string): Promise<string> {
   const { data, error } = await db.rpc("needs_attention", { p_site_id: siteId, p_minutes: ATTENTION_MINUTES });
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as { kind: string; name: string; detail: string }[];
-  if (rows.length === 0) return "Nothing needs attention right now. Everyone is welcomed and paid up.";
+  if (rows.length === 0) return "all clear, everyone is welcomed and paid up.";
 
   const names = (kind: string) => rows.filter((r) => r.kind === kind).map((r) => r.name);
   const list = (all: string[]) => all.slice(0, 5).join(", ") + (all.length > 5 ? ` and ${all.length - 5} more` : "");
@@ -73,22 +83,36 @@ export async function get_attention_items(siteId: string): Promise<string> {
 
   const dropped = names("dropped_off");
   if (dropped.length) parts.push(`${dropped.length} signed up but never ordered: ${list(dropped)}.`);
+  return parts.join(" ");
+}
 
-  return oneLine(parts.join(" "));
+// No project given and several exist: reports every project in the business.
+export async function get_attention_items(ctx: CallerContext, args: Args): Promise<string> {
+  const picked = pickSite(ctx, args.project);
+  const targets = picked ? [picked] : ctx.sites;
+  const who = ctx.owner?.full_name ? `Caller: ${firstName(ctx.owner.full_name)}. ` : "";
+  if (targets.length === 0) return `${who}Business: ${ctx.business.name}. It has no projects yet.`;
+  const summaries = await Promise.all(targets.map((s) => attentionFor(s.id)));
+  const body = targets.map((s, i) => `Project ${s.product_name}: ${summaries[i]}`).join(" ");
+  return oneLine(`${who}Business: ${ctx.business.name}. ${body}`);
 }
 
 // ---------------------------------------------------------------- find_customers
 
-export async function find_customers(siteId: string, args: Args): Promise<string> {
+export async function find_customers(ctx: CallerContext, args: Args): Promise<string> {
   const query = typeof args.query === "string" && args.query.trim() ? args.query.trim() : null;
   const segment = typeof args.segment === "string" ? args.segment : "all";
-  const found = await findCustomers(siteId, query, segment);
+  const picked = pickSite(ctx, args.project);
+  const targets = picked ? [picked] : ctx.sites;
+  const perSite = await Promise.all(targets.map((s) => findCustomers(s.id, query, segment)));
+  const found = perSite.flatMap((rows, i) => rows.map((c) => ({ ...c, project: targets[i].product_name })));
   if (found.length === 0) {
     return `No customers found${query ? ` matching "${query}"` : ""}. Do not guess; tell the owner nobody matched.`;
   }
   const shown = found.slice(0, 10).map((c) => {
     const state = c.state === "unpaid" ? `unpaid ${dollars(c.pending_cents)}` : c.state.replace("_", " ");
-    return `${c.name} (${state}, id ${c.id})`;
+    const project = targets.length > 1 ? `${c.project}, ` : "";
+    return `${c.name} (${project}${state}, id ${c.id})`;
   });
   const more = found.length > 10 ? ` Plus ${found.length - 10} more not listed.` : "";
   return oneLine(`${plural(found.length, "match", "matches")}: ${shown.join("; ")}.${more}`);
@@ -128,14 +152,15 @@ function parseItems(raw: unknown): Item[] {
   return items;
 }
 
-export async function propose_actions(siteId: string, args: Args): Promise<string> {
+export async function propose_actions(ctx: CallerContext, args: Args): Promise<string> {
   const items = parseItems(args.items);
   if (items.length === 0) return "Nothing to propose: I need at least one email, text or invoice item.";
-
-  const site = await getSite(siteId);
+  const site = pickSite(ctx, args.project);
+  if (!site) return whichProject(ctx);
+  const siteId = site.id;
 
   // Recipients always come from find_customers(siteId, ...), so ids that
-  // belong to another site simply never match and are dropped.
+  // belong to another project or business never match and are dropped.
   const pools = await Promise.all(
     items.map((item) => findCustomers(siteId, null, item.customer_ids ? "all" : item.segment ?? "all")),
   );
@@ -211,21 +236,23 @@ export async function propose_actions(siteId: string, args: Args): Promise<strin
     const total = planned.reduce((sum, p) => sum + (p.amount ?? 0), 0);
     parts.push(`${plural(count("invoice"), "invoice")} totaling ${dollars(total)}`);
   }
+  const where = ctx.sites.length > 1 ? ` for ${site.product_name}` : "";
   return oneLine(
-    `Proposed ${parts.join(", ")}.${skipNote} Nothing is sent yet. Read this back and ask "Should I go ahead?" batch_id: ${batchId}`,
+    `Proposed${where}: ${parts.join(", ")}.${skipNote} Nothing is sent yet. Read this back and ask "Should I go ahead?" batch_id: ${batchId}`,
   );
 }
 
 // ---------------------------------------------------------------- confirm / cancel
 
-// With no batch_id, falls back to this site's most recent open proposal.
-// A batch_id that is given but belongs to another site never matches.
-async function resolveBatch(siteId: string, raw: unknown): Promise<string | null> {
+// With no batch_id, falls back to this business's most recent open proposal.
+// A batch_id that is given but belongs to another business never matches,
+// because every query is limited to the caller's own project ids.
+async function resolveBatch(siteIds: string[], raw: unknown): Promise<string | null> {
   if (typeof raw === "string" && raw.trim()) return UUID.test(raw.trim()) ? raw.trim() : null;
   const { data } = await db
     .from("actions")
     .select("batch_id")
-    .eq("site_id", siteId)
+    .in("site_id", siteIds)
     .eq("status", "proposed")
     .gt("created_at", new Date(Date.now() - 15 * 60_000).toISOString())
     .order("created_at", { ascending: false })
@@ -233,8 +260,9 @@ async function resolveBatch(siteId: string, raw: unknown): Promise<string | null
   return data?.[0]?.batch_id ?? null;
 }
 
-export async function confirm_actions(siteId: string, args: Args): Promise<string> {
-  const batchId = await resolveBatch(siteId, args.batch_id);
+export async function confirm_actions(ctx: CallerContext, args: Args): Promise<string> {
+  const siteIds = ctx.sites.map((s) => s.id);
+  const batchId = await resolveBatch(siteIds, args.batch_id);
   const none = "No open proposal found for this business with that id. Nothing was sent.";
   if (!batchId) return none;
 
@@ -242,7 +270,7 @@ export async function confirm_actions(siteId: string, args: Args): Promise<strin
     .from("actions")
     .update({ status: "approved" })
     .eq("batch_id", batchId)
-    .eq("site_id", siteId)
+    .in("site_id", siteIds)
     .eq("status", "proposed")
     .select("id");
   if (error) throw new Error(error.message);
@@ -257,7 +285,7 @@ export async function confirm_actions(siteId: string, args: Args): Promise<strin
   keepAlive(run);
   await Promise.race([run.catch(() => null), sleep(3500)]);
 
-  const { data: rows } = await db.from("actions").select("status").eq("batch_id", batchId).eq("site_id", siteId);
+  const { data: rows } = await db.from("actions").select("status").eq("batch_id", batchId).in("site_id", siteIds);
   const n = (s: string) => (rows ?? []).filter((r) => r.status === s).length;
   const running = n("approved") + n("executing");
   const parts = [`${n("executed")} sent`, `${n("simulated")} simulated`, `${n("failed")} failed`];
@@ -267,14 +295,15 @@ export async function confirm_actions(siteId: string, args: Args): Promise<strin
   );
 }
 
-export async function cancel_actions(siteId: string, args: Args): Promise<string> {
-  const batchId = await resolveBatch(siteId, args.batch_id);
+export async function cancel_actions(ctx: CallerContext, args: Args): Promise<string> {
+  const siteIds = ctx.sites.map((s) => s.id);
+  const batchId = await resolveBatch(siteIds, args.batch_id);
   if (!batchId) return "There was no open proposal to cancel. Nothing was sent.";
   const { data, error } = await db
     .from("actions")
     .update({ status: "cancelled" })
     .eq("batch_id", batchId)
-    .eq("site_id", siteId)
+    .in("site_id", siteIds)
     .eq("status", "proposed")
     .select("id");
   if (error) throw new Error(error.message);
@@ -284,8 +313,10 @@ export async function cancel_actions(siteId: string, args: Args): Promise<string
 
 // ---------------------------------------------------------------- build_landing_page
 
-export async function build_landing_page(siteId: string, args: Args): Promise<string> {
-  const site = await getSite(siteId);
+export async function build_landing_page(ctx: CallerContext, args: Args): Promise<string> {
+  const site = pickSite(ctx, args.project);
+  if (!site) return whichProject(ctx);
+  const siteId = site.id;
 
   const { data: active } = await db
     .from("site_builds")
@@ -336,29 +367,20 @@ export async function build_landing_page(siteId: string, args: Args): Promise<st
 
 // ---------------------------------------------------------------- dispatch
 
-export const TOOL_NAMES = [
-  "get_attention_items",
-  "find_customers",
-  "propose_actions",
-  "confirm_actions",
-  "cancel_actions",
-  "build_landing_page",
-] as const;
-
-export function runTool(name: string, siteId: string, args: Args): Promise<string> {
+export function runTool(name: string, ctx: CallerContext, args: Args): Promise<string> {
   switch (name) {
     case "get_attention_items":
-      return get_attention_items(siteId);
+      return get_attention_items(ctx, args);
     case "find_customers":
-      return find_customers(siteId, args);
+      return find_customers(ctx, args);
     case "propose_actions":
-      return propose_actions(siteId, args);
+      return propose_actions(ctx, args);
     case "confirm_actions":
-      return confirm_actions(siteId, args);
+      return confirm_actions(ctx, args);
     case "cancel_actions":
-      return cancel_actions(siteId, args);
+      return cancel_actions(ctx, args);
     case "build_landing_page":
-      return build_landing_page(siteId, args);
+      return build_landing_page(ctx, args);
     default:
       return Promise.reject(new Error(`unknown tool ${name}`));
   }

@@ -31,7 +31,7 @@ async function main() {
   const stamp = Date.now();
   const password = `Test-${stamp}-${Math.random().toString(36).slice(2)}`;
   const users: string[] = [];
-  const { data: before } = await db.from("sites").select("owner_id").eq("id", SITE_A).single();
+  const { data: before } = await db.from("businesses").select("owner_id").eq("id", SITE_A).single();
   const batchId = crypto.randomUUID();
 
   const signIn = async (label: string) => {
@@ -49,7 +49,7 @@ async function main() {
   try {
     const owner = await signIn("owner");
     const stranger = await signIn("stranger");
-    await db.from("sites").update({ owner_id: owner.id }).eq("id", SITE_A);
+    await db.from("businesses").update({ owner_id: owner.id }).eq("id", SITE_A);
 
     const ownerEvents = await listen(owner.client, "owner");
     const strangerEvents = await listen(stranger.client, "stranger");
@@ -69,13 +69,13 @@ async function main() {
     check("owner receives the status change over Realtime", ownerEvents.includes("UPDATE:cancelled"));
     check("second user receives nothing", strangerEvents.length === 0, `${strangerEvents.length} events`);
 
-    for (const table of ["sites", "customers", "orders", "actions", "site_builds"]) {
+    for (const table of ["profiles", "businesses", "sites", "customers", "orders", "actions", "site_builds"]) {
       const { data } = await stranger.client.from(table).select("*").limit(5);
       check(`second user reads 0 rows from ${table}`, (data ?? []).length === 0);
     }
   } finally {
     await db.from("actions").delete().eq("batch_id", batchId);
-    await db.from("sites").update({ owner_id: before?.owner_id ?? null }).eq("id", SITE_A);
+    await db.from("businesses").update({ owner_id: before?.owner_id ?? null }).eq("id", SITE_A);
     for (const id of users) await db.auth.admin.deleteUser(id);
   }
   finish();

@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 val() { grep -E "^$1=" .env.local | head -1 | cut -d= -f2-; }
 URL="$(val NEXT_PUBLIC_SUPABASE_URL)/functions/v1/vapi-tools"
 SECRET="$(val VAPI_SERVER_SECRET)"
-SITE_B_PHONE="+15555550002"                               # Harbor Coffee Roasters (seed)
+SITE_B_PHONE="+15555550002"                               # user "harbor", Harbor Coffee Roasters
 SITE_B_CUSTOMER="b0000000-0000-4000-8000-000000000001"    # belongs to site B
 FAILS=0; SLOWEST=0; OUT=""; CODE=""; SECS=""
 
@@ -33,7 +33,8 @@ call() {
 has() { echo "$OUT" | grep -qi -- "$1"; }
 batch_id() { echo "$OUT" | grep -oE 'batch_id: [0-9a-f-]{36}' | cut -d' ' -f2; }
 
-ITEMS='{"items": [
+OWNER_PHONE="$(val OWNER_PHONE)"; OWNER_PHONE="${OWNER_PHONE:-+15555550001}"   # user "sunrise"
+ITEMS='{"project": "Intro class pack", "items": [
   {"type": "email", "segment": "welcome_pending", "intent": "welcome everyone who is new"},
   {"type": "sms", "segment": "welcome_pending", "intent": "welcome everyone who is new"},
   {"type": "invoice", "segment": "unpaid", "intent": "send the unpaid ones their invoice"}]}'
@@ -41,6 +42,15 @@ ITEMS='{"items": [
 echo "== auth"
 call get_attention_items '{}' "" "wrong-secret"; check "wrong secret -> 401" "$([ "$CODE" = 401 ]; echo $?)" "http $CODE"
 call get_attention_items '{}' "" "";             check "missing secret -> 401" "$([ "$CODE" = 401 ]; echo $?)" "http $CODE"
+
+echo "== caller recognition (phone -> user -> business -> projects)"
+call get_attention_items '{}' "$OWNER_PHONE"; has "Caller: Dana"; check "caller ID resolves to the user" $?
+has "Business: Sunrise Yoga Studio"; check "user resolves to their business" $?
+has "Project Intro class pack" && has "Project Monthly membership"; check "all projects of the business are reported" $?
+call get_attention_items '{}' "$SITE_B_PHONE"; has "Harbor Coffee Roasters" && ! has "Sunrise"; check "a different caller gets their own business only" $?
+call get_attention_items '{"project": "membership"}' "$OWNER_PHONE"; has "Monthly membership" && ! has "Intro class pack"; check "project argument selects one project" $?
+call propose_actions '{"items": [{"type": "email", "segment": "welcome_pending", "intent": "welcome"}]}' "$OWNER_PHONE"
+has "which project"; check "acting without naming a project asks which one" $?
 
 echo "== read tools"
 call get_attention_items '{}'; has "not welcomed"; check "get_attention_items lists welcome_pending" $?
@@ -66,7 +76,7 @@ call confirm_actions "{\"batch_id\": \"$B2\"}" "$SITE_B_PHONE"; has "No open pro
 check "site B cannot confirm site A's batch" $?
 call cancel_actions "{\"batch_id\": \"$B2\"}" "$SITE_B_PHONE"; has "no open proposal"
 check "site B cannot cancel site A's batch" $?
-call propose_actions "{\"items\": [{\"type\": \"email\", \"customer_ids\": [\"$SITE_B_CUSTOMER\"], \"intent\": \"hello\"}]}"
+call propose_actions "{\"project\": \"Intro class pack\", \"items\": [{\"type\": \"email\", \"customer_ids\": [\"$SITE_B_CUSTOMER\"], \"intent\": \"hello\"}]}"
 has "no matching customers"; check "foreign customer_ids are dropped" $?
 
 echo "== confirm"
@@ -75,7 +85,7 @@ has "simulated"; check "confirm reports simulated count" $?
 call confirm_actions "{\"batch_id\": \"$B2\"}"; has "No open proposal"; check "second confirm is a no-op" $?
 
 echo "== consent"
-call propose_actions '{"items": [{"type": "sms", "customer_ids": ["a0000000-0000-4000-8000-000000000004", "a0000000-0000-4000-8000-000000000006"], "intent": "say hi"}]}'
+call propose_actions '{"project": "Intro class pack", "items": [{"type": "sms", "customer_ids": ["a0000000-0000-4000-8000-000000000004", "a0000000-0000-4000-8000-000000000006"], "intent": "say hi"}]}'
 has "skipped for texts"; check "no-consent and no-phone customers get no SMS row" $?
 
 echo

@@ -12,15 +12,63 @@ export const FUNCTIONS_URL = `${Deno.env.get("SUPABASE_URL")}/functions/v1`;
 export const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 export const ATTENTION_MINUTES = Number(Deno.env.get("ATTENTION_MINUTES") ?? "2") || 2;
 
+// A project: one offer with its own landing page, customers and orders.
 export type Site = {
   id: string;
-  owner_phone: string;
+  business_id: string;
   name: string;
   slug: string;
   product_name: string;
   price_cents: number;
   landing_url: string | null;
 };
+
+export const SITE_COLUMNS = "id, business_id, name, slug, product_name, price_cents, landing_url";
+
+export type Owner = { id: string; username: string; full_name: string | null; phone: string | null };
+
+// Who is calling: the user, their business, and the projects under it.
+export type CallerContext = {
+  owner: Owner | null;
+  business: { id: string; name: string };
+  sites: Site[];
+};
+
+async function contextForBusiness(businessId: string, owner: Owner | null): Promise<CallerContext | null> {
+  const { data: business } = await db
+    .from("businesses")
+    .select(`id, name, owner_id, sites(${SITE_COLUMNS}, created_at)`)
+    .eq("id", businessId)
+    .maybeSingle();
+  if (!business) return null;
+  if (!owner && business.owner_id) {
+    const { data } = await db.from("profiles").select("id, username, full_name, phone").eq("id", business.owner_id).maybeSingle();
+    owner = (data as Owner) ?? null;
+  }
+  const sites = ((business.sites ?? []) as (Site & { created_at: string })[])
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return { owner, business: { id: business.id, name: business.name }, sites };
+}
+
+// Caller ID -> user profile -> their business -> its projects.
+export async function contextForPhone(phone: string): Promise<CallerContext | null> {
+  const { data: owner } = await db.from("profiles").select("id, username, full_name, phone").eq("phone", phone).maybeSingle();
+  if (!owner) return null;
+  const { data: business } = await db
+    .from("businesses")
+    .select("id")
+    .eq("owner_id", owner.id)
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (!business?.length) return null;
+  return contextForBusiness(business[0].id, owner as Owner);
+}
+
+// Web calls have no caller ID: use the demo project's business.
+export async function contextForSite(siteId: string): Promise<CallerContext | null> {
+  const { data: site } = await db.from("sites").select("business_id").eq("id", siteId).maybeSingle();
+  return site ? contextForBusiness(site.business_id, null) : null;
+}
 
 export type Customer = {
   id: string;

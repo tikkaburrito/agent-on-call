@@ -2,40 +2,28 @@
 // Called by the build_landing_page tool with the service key. Answers 202 at
 // once and finishes in the background so the phone call never waits on it.
 import { isAllowed } from "../_shared/allowlist.ts";
-import { db, isInternalCall, keepAlive, type Site } from "../_shared/db.ts";
+import { db, isInternalCall, keepAlive, type Site, SITE_COLUMNS } from "../_shared/db.ts";
 import { draftLanding, renderLanding } from "../_shared/landing.ts";
-import { sendEmail, sendSms } from "../_shared/send.ts";
+import { sendSms } from "../_shared/send.ts";
 import { deployStatic } from "../_shared/vercel.ts";
 
-async function notifyOwner(site: Site & { owner_id: string | null }, url: string) {
+// Texts the link to the business owner's phone (from their profile).
+async function notifyOwner(site: Site, url: string) {
   const notified: Record<string, unknown> = {};
-  const text = `${site.name}: your landing page is live. ${url}`;
-
-  if (isAllowed(site.owner_phone)) {
+  const { data: business } = await db.from("businesses").select("owner_id").eq("id", site.business_id).maybeSingle();
+  const { data: owner } = business?.owner_id
+    ? await db.from("profiles").select("phone").eq("id", business.owner_id).maybeSingle()
+    : { data: null };
+  const phone: string | null = owner?.phone ?? null;
+  if (!phone) {
+    notified.sms = "skipped: the owner has no phone on their profile";
+  } else if (!isAllowed(phone)) {
+    notified.sms = "simulated: owner phone not on allowlist";
+  } else {
     try {
-      notified.sms_sid = (await sendSms({ to: site.owner_phone, body: text })).sid;
+      notified.sms_sid = (await sendSms({ to: phone, body: `${site.name}: your landing page is live. ${url}` })).sid;
     } catch (e) {
       notified.sms_error = (e as Error).message;
-    }
-  } else {
-    notified.sms = "simulated: owner phone not on allowlist";
-  }
-
-  // Email as a second channel, in case the text is filtered by the carrier.
-  if (site.owner_id) {
-    const { data } = await db.auth.admin.getUserById(site.owner_id);
-    const email = data?.user?.email;
-    if (email && isAllowed(email)) {
-      try {
-        const sent = await sendEmail({
-          to: email,
-          subject: `Your ${site.name} landing page is live`,
-          text: `Your landing page is deployed and ready to share:\n\n${url}\n\nSignups from it show up when you call Agent on Call.`,
-        });
-        notified.email_id = sent.id;
-      } catch (e) {
-        notified.email_error = (e as Error).message;
-      }
     }
   }
   return notified;
@@ -49,18 +37,15 @@ async function build(buildId: string, intent: string) {
   try {
     const { data: row } = await db.from("site_builds").select("id, site_id, status").eq("id", buildId).single();
     if (!row || row.status !== "building") return;
-    const { data: site } = await db
-      .from("sites")
-      .select("id, owner_id, owner_phone, name, slug, product_name, price_cents, landing_url")
-      .eq("id", row.site_id)
-      .single();
-    if (!site) throw new Error("site not found");
+    const { data } = await db.from("sites").select(SITE_COLUMNS).eq("id", row.site_id).single();
+    if (!data) throw new Error("site not found");
+    const site = data as unknown as Site;
 
     const appUrl = Deno.env.get("NEXT_PUBLIC_SITE_URL");
     if (!appUrl) throw new Error("NEXT_PUBLIC_SITE_URL is not configured");
 
-    const { copy, source } = await draftLanding(site as Site, intent);
-    const html = renderLanding(site as Site, copy, appUrl.replace(/\/$/, ""));
+    const { copy, source } = await draftLanding(site, intent);
+    const html = renderLanding(site, copy, appUrl.replace(/\/$/, ""));
     const deployed = await deployStatic({ name: `aoc-${site.slug}`, html });
 
     await db.from("sites").update({ landing_url: deployed.url }).eq("id", site.id);

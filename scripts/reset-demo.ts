@@ -4,13 +4,15 @@
 // that are not part of the seed, and restores the seeded welcome/paid states.
 import { admin, SITE_A, SITE_B } from "./_env";
 
-const NOT_WELCOMED = ["a0000000-0000-4000-8000-000000000003", "a0000000-0000-4000-8000-000000000005", "a0000000-0000-4000-8000-000000000007"];
-const PENDING_ORDERS = ["c0000000-0000-4000-8000-000000000003", "c0000000-0000-4000-8000-000000000004", "c0000000-0000-4000-8000-000000000007", "d0000000-0000-4000-8000-000000000001"];
-const isSeed = (id: string) => /^[a-d]0000000-0000-4000-8000-/.test(id);
+const SITE_C = "33333333-3333-4333-8333-333333333333"; // Sunrise / Monthly membership
+
+const NOT_WELCOMED = ["a0000000-0000-4000-8000-000000000003", "a0000000-0000-4000-8000-000000000005", "a0000000-0000-4000-8000-000000000007", "a3000000-0000-4000-8000-000000000003", "a3000000-0000-4000-8000-000000000005", "b0000000-0000-4000-8000-000000000001"];
+const PENDING_ORDERS = ["c0000000-0000-4000-8000-000000000003", "c0000000-0000-4000-8000-000000000004", "c0000000-0000-4000-8000-000000000007", "c3000000-0000-4000-8000-000000000002", "d0000000-0000-4000-8000-000000000001"];
+const isSeed = (id: string) => /^[a-d][03]000000-0000-4000-8000-/.test(id);
 
 async function main() {
   const db = admin();
-  const sites = [SITE_A, SITE_B];
+  const sites = [SITE_A, SITE_B, SITE_C];
   await db.from("actions").delete().in("site_id", sites);
   await db.from("site_builds").delete().in("site_id", sites);
 

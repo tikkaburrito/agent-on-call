@@ -25,7 +25,7 @@ add() { # name, extra flags
 add NEXT_PUBLIC_SUPABASE_URL "--no-sensitive"
 add NEXT_PUBLIC_SUPABASE_ANON_KEY "--no-sensitive"
 add NEXT_PUBLIC_SITE_URL "--no-sensitive"
-add OWNER_EMAIL "--no-sensitive"
+add NEXT_PUBLIC_AGENT_PHONE "--no-sensitive"
 add SUPABASE_SERVICE_ROLE_KEY "--sensitive"
 add STRIPE_SECRET_KEY "--sensitive"
 

@@ -1,11 +1,17 @@
+export type Profile = { id: string; username: string; full_name: string | null; phone: string | null };
+
+export type Business = { id: string; owner_id: string | null; name: string; created_at: string };
+
+// A project under a business: one offer with its own page, customers and orders.
 export type Site = {
   id: string;
-  owner_id: string | null;
-  owner_phone: string;
+  business_id: string;
   name: string;
   slug: string;
   product_name: string;
   price_cents: number;
+  headline: string | null;
+  subhead: string | null;
   landing_url: string | null;
   created_at: string;
 };
@@ -73,6 +79,7 @@ export type AttentionItem = {
 };
 
 export const DEMO_SITE_ID = "11111111-1111-4111-8111-111111111111";
+export const DEMO_BUSINESS_ID = "11111111-1111-4111-8111-111111111111";
 
 export const dollars = (cents: number) =>
   `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
