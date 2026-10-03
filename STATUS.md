@@ -7,6 +7,7 @@
 - Agent phone number: +1 341 218 4552 (Vapi assistant "Agent On Call", persona Agent Seven)
 - Emails are sent from `agentseven@tikkaburrito.com`
 - Web app (Vercel, production): https://agent-on-call.vercel.app (project `agent-on-call`, team `tikka-burrito`; pushes to `main` auto-deploy)
+- Admin console (live call transcripts, tool calls, resulting actions): https://agent-on-call.vercel.app/admin (admins only; `krishnan_meetup` is an admin)
 - Dashboard: https://agent-on-call.vercel.app/dashboard · Login: https://agent-on-call.vercel.app/login
 - GitHub (public): https://github.com/tikkaburrito/agent-on-call
 
@@ -31,6 +32,12 @@
 3. For the judge demo: add the judge's email to `SEND_ALLOWLIST` in `.env.local`, then run `bash scripts/push-secrets.sh`.
 
 Keys live in two places: Vercel (the website) and Supabase function secrets (the agent, sender and page builder). `.env.local` is the source for both; `bash scripts/go-live.sh` copies from it and reruns the checks.
+
+## Fixed after the first real calls
+
+- **Offers were dropped from drafted copy.** The drafter was told never to mention discounts, so "50 percent off" was left out, and the agent then said it was included. Now the owner's stated offer must appear in the copy (enforced in code, not only in the prompt), `propose_actions` returns the drafted wording, and `get_recent_actions` lets the agent read back what was actually sent.
+- **A percent-off offer on a landing page is real.** `build_landing_page` stores it as the project's `discount_percent`; the page, the signup page and Stripe Checkout all use the discounted price. Say "remove the discount" (or pass 0) to clear it.
+- **Call log.** Calls made before this change were imported from Vapi; new ones are logged live.
 
 ## Notes
 

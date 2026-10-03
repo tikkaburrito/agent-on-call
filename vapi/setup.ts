@@ -74,14 +74,18 @@ async function main() {
     toolIds,
     tools: [{ type: "endCall" }],
   };
+  // The assistant also reports transcripts and call status to the same
+  // function, which keeps the call log for the admin console.
+  const reporting = { server: { url: server.url, headers: server.headers }, serverMessages: config.serverMessages };
   // An existing assistant keeps its own name, greeting and voice.
   const assistant = existing
-    ? await vapi("PATCH", `/assistant/${existing.id}`, { model })
+    ? await vapi("PATCH", `/assistant/${existing.id}`, { model, ...reporting })
     : await vapi("POST", "/assistant", {
         name: config.name,
         firstMessage: config.firstMessage,
         firstMessageMode: "assistant-speaks-first",
         model,
+        ...reporting,
       });
   console.log(`${existing ? "updated" : "created"} assistant "${assistant.name ?? config.name}" with ${toolIds.length} tools`);
   console.log(`ASSISTANT_ID=${assistant.id}`);

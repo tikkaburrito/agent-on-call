@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { toE164 } from "@/lib/auth";
-import { DEMO_SITE_ID } from "@/lib/types";
+import { DEMO_SITE_ID, salePrice } from "@/lib/types";
 
 // Public endpoint: the booking page on this app and every landing page the
 // agent deploys post here. It is the only public write path, and it only
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   const db = supabaseAdmin();
   const { data: site } = await db
     .from("sites")
-    .select("id, name, slug, product_name, price_cents, landing_url")
+    .select("id, name, slug, product_name, price_cents, discount_percent, landing_url")
     .eq("id", siteId)
     .maybeSingle();
   if (!site) return json({ error: "Unknown site." }, 404);
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
   const { data: order, error: orderError } = await db
     .from("orders")
-    .insert({ site_id: site.id, customer_id: customer.id, amount_cents: site.price_cents })
+    .insert({ site_id: site.id, customer_id: customer.id, amount_cents: salePrice(site) })
     .select("id")
     .single();
   if (orderError) return json({ error: "Could not create your order." }, 500);
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
           quantity: 1,
           price_data: {
             currency: "usd",
-            unit_amount: site.price_cents,
+            unit_amount: salePrice(site),
             product_data: { name: `${site.product_name} — ${site.name}` },
           },
         },

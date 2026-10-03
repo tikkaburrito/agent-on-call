@@ -15,6 +15,13 @@ async function main() {
   const sites = [SITE_A, SITE_B, SITE_C];
   await db.from("actions").delete().in("site_id", sites);
   await db.from("site_builds").delete().in("site_id", sites);
+  // Call log entries created by the test scripts (real Vapi call ids are UUIDs).
+  const { data: calls } = await db.from("calls").select("id");
+  const testCalls = (calls ?? []).map((c) => c.id).filter((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(id));
+  if (testCalls.length) {
+    await db.from("actions").delete().in("call_id", testCalls);
+    await db.from("calls").delete().in("id", testCalls);
+  }
 
   const { data: orders } = await db.from("orders").select("id").in("site_id", sites);
   const extraOrders = (orders ?? []).map((o) => o.id).filter((id) => !isSeed(id));

@@ -230,6 +230,11 @@ export default function Dashboard() {
             <span className={`size-2.5 rounded-full ${live ? "bg-emerald-400" : "bg-zinc-600"}`} />
             {live ? "Live" : "Connecting…"}
           </span>
+          {profile?.is_admin && (
+            <Link href="/admin" className="font-semibold text-amber-400 underline-offset-4 hover:underline">
+              Admin console
+            </Link>
+          )}
           <button onClick={signOut} className="underline-offset-4 hover:text-white hover:underline">
             Sign out
           </button>
@@ -272,6 +277,7 @@ export default function Dashboard() {
           <p className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-lg text-zinc-300">
             <span>
               {site.product_name} · {dollars(site.price_cents)}
+              {site.discount_percent > 0 ? ` (${site.discount_percent}% off now)` : ""}
             </span>
             <a href={`/s/${site.slug}`} target="_blank" rel="noreferrer" className="text-amber-400 underline underline-offset-4">
               Signup page

@@ -1,7 +1,7 @@
 // M1 acceptance + QA 14.1 (RLS): npx tsx scripts/m1-db.ts
 import { admin, anon, check, finish, SITE_A, SITE_B } from "./_env";
 
-const TABLES = ["profiles", "businesses", "sites", "customers", "orders", "actions", "site_builds", "stripe_events"];
+const TABLES = ["profiles", "businesses", "sites", "customers", "orders", "actions", "site_builds", "calls", "call_events", "stripe_events"];
 
 async function main() {
   const db = admin();

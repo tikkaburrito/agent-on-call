@@ -1,4 +1,4 @@
-export type Profile = { id: string; username: string; full_name: string | null; phone: string | null };
+export type Profile = { id: string; username: string; full_name: string | null; phone: string | null; is_admin: boolean };
 
 export type Business = { id: string; owner_id: string | null; name: string; created_at: string };
 
@@ -10,6 +10,7 @@ export type Site = {
   slug: string;
   product_name: string;
   price_cents: number;
+  discount_percent: number;
   headline: string | null;
   subhead: string | null;
   landing_url: string | null;
@@ -83,3 +84,7 @@ export const DEMO_BUSINESS_ID = "11111111-1111-4111-8111-111111111111";
 
 export const dollars = (cents: number) =>
   `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+
+// What a customer pays today: the list price less the project's discount.
+export const salePrice = (site: { price_cents: number; discount_percent?: number | null }) =>
+  Math.round((site.price_cents * (100 - (site.discount_percent ?? 0))) / 100);

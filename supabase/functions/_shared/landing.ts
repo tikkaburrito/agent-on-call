@@ -1,6 +1,6 @@
 // Landing page for a site: Claude writes the words, this file owns the markup.
 // Every value is escaped; the model never produces HTML.
-import { type Site, usd } from "./db.ts";
+import { salePrice, type Site, usd } from "./db.ts";
 
 export type LandingCopy = {
   headline: string;
@@ -23,7 +23,7 @@ export function templateLanding(site: Site): LandingCopy {
     headline: `${site.product_name} at ${site.name}`,
     subhead: "Sign up below in under a minute. We'll take it from there.",
     benefits: ["Simple online booking", "Secure checkout", "Friendly, personal service"],
-    cta: `Get started for ${usd(site.price_cents)}`,
+    cta: `Get started for ${usd(salePrice(site))}`,
     accent: "amber",
   };
 }
@@ -59,8 +59,9 @@ export async function draftLanding(site: Site, intent: string, timeoutMs = 9000)
             content: JSON.stringify({
               business: site.name,
               product: site.product_name,
-              price: usd(site.price_cents),
-              known_facts: site.subhead ?? "",
+              price: usd(salePrice(site)),
+              known_facts: [site.subhead ?? "", site.discount_percent ? `${site.discount_percent}% off right now, regular price ${usd(site.price_cents)}` : ""]
+                .filter(Boolean).join(". "),
               owner_request: intent,
             }),
           },
@@ -120,6 +121,8 @@ export function renderLanding(site: Site, copy: LandingCopy, appUrl: string): st
   .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 20px; }
   h2 { margin: 0; font-size: 20px; }
   .price { margin: 0; font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .was { font-size: 18px; font-weight: 400; color: #78716c; margin-right: 4px; }
+  .badge { display: inline-block; margin: 14px 0 0; padding: 6px 14px; border-radius: 999px; background: ${c.solid}; color: #fff; font-size: 15px; font-weight: 650; }
   form { display: grid; gap: 16px; }
   label { display: grid; gap: 6px; font-size: 14px; font-weight: 500; color: #44403c; }
   label span { font-weight: 400; color: #78716c; }
@@ -140,7 +143,9 @@ export function renderLanding(site: Site, copy: LandingCopy, appUrl: string): st
 <body>
 <main class="wrap">
   <section>
-    <p class="eyebrow">${esc(site.name)}</p>
+    <p class="eyebrow">${esc(site.name)}</p>${
+    site.discount_percent ? `\n    <p class="badge">${site.discount_percent}% off right now</p>` : ""
+  }
     <h1>${esc(copy.headline)}</h1>
     <p class="sub">${esc(copy.subhead)}</p>
     <ul>${copy.benefits.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>
@@ -148,7 +153,11 @@ export function renderLanding(site: Site, copy: LandingCopy, appUrl: string): st
   <section class="card">
     <div class="card-head">
       <h2>${esc(site.product_name)}</h2>
-      <p class="price">${esc(usd(site.price_cents))}</p>
+      <p class="price">${
+    site.discount_percent
+      ? `<s class="was">${esc(usd(site.price_cents))}</s> ${esc(usd(salePrice(site)))}`
+      : esc(usd(site.price_cents))
+  }</p>
     </div>
     <form id="signup">
       <label>Name<input type="text" name="name" required maxlength="100" autocomplete="name" placeholder="Your name"></label>

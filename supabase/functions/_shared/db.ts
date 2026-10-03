@@ -22,14 +22,27 @@ export type Site = {
   price_cents: number;
   landing_url: string | null;
   subhead?: string | null;
+  discount_percent?: number;
 };
 
-export const SITE_COLUMNS = "id, business_id, name, slug, product_name, price_cents, landing_url, subhead";
+// What a customer pays today: the list price less the project's discount.
+export const salePrice = (site: { price_cents: number; discount_percent?: number }) =>
+  Math.round((site.price_cents * (100 - (site.discount_percent ?? 0))) / 100);
+
+// A percent-off offer the owner stated, e.g. "50 percent off" -> 50.
+export function statedDiscount(text: string): number | null {
+  const m = text.match(/(\d{1,2})\s*(?:%|percent|per cent)/i);
+  const n = m ? Number(m[1]) : NaN;
+  return n >= 1 && n <= 90 ? n : null;
+}
+
+export const SITE_COLUMNS = "id, business_id, name, slug, product_name, price_cents, discount_percent, landing_url, subhead";
 
 export type Owner = { id: string; username: string; full_name: string | null; phone: string | null };
 
 // Who is calling: the user, their business, and the projects under it.
 export type CallerContext = {
+  callId?: string;
   owner: Owner | null;
   business: { id: string; name: string };
   sites: Site[];

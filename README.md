@@ -43,6 +43,7 @@ Owner dashboard (Next.js) ◀─ Supabase Auth (username + password) + RLS + Rea
 | `customers`, `orders` | People who signed up on a project's page, and what they owe or paid |
 | `actions` | Every email, text and invoice the agent proposed, with its status and result |
 | `site_builds` | Landing pages the agent built and deployed for a project |
+| `calls`, `call_events` | The call log: every call with its live transcript, tool calls and results |
 
 A user signs up with a username, a password and their mobile number, then adds their business and first project. When they call, `vapi-tools` looks up `profiles.phone`, loads their business and its projects, and every tool is limited to those project ids. With several projects, the agent reports on all of them and asks which one before it acts.
 
@@ -67,22 +68,33 @@ A user signs up with a username, a password and their mobile number, then adds t
 - **Stripe test mode only.** The Stripe helper refuses any key that is not `sk_test_`.
 - **Model output is data.** Claude writes words (message copy, landing page copy as JSON). It never writes HTML or SQL; the landing page template escapes every value.
 
+## Admin console (`/admin`)
+
+For the operator of the platform (a profile with `is_admin`; grant it with `npx tsx scripts/make-admin.ts <username>`).
+
+- **Calls**: every call, live. The assistant reports final transcript lines, status changes and the end-of-call report to `vapi-tools`, which stores them in `calls` and `call_events`; the page updates over Realtime while the call is still going.
+- **Per call**: the transcript, each tool call with its arguments, result and duration, and then what came out of it: the emails, texts and invoices with their exact wording and delivery status, and any landing page that was built.
+- **Users and businesses**: who owns what, which phone they call from (last four digits), their projects, prices and pages.
+
+`npx tsx scripts/backfill-calls.ts` imports earlier calls from Vapi.
+
 ## Agent tools
 
 | Tool | What it does |
 |---|---|
 | `get_attention_items` | The caller's name and business, then per project: counts and up to 5 names for not welcomed, unpaid, dropped off |
 | `find_customers` | Lookup by name/email and segment (`all`, `new_today`, `welcome_pending`, `unpaid`, `dropped_off`) |
-| `propose_actions` | Resolves recipients, drafts copy with Claude (templates as fallback), inserts `proposed` actions under one `batch_id`, returns a spoken summary |
+| `propose_actions` | Resolves recipients, drafts copy with Claude (templates as fallback) including any offer the owner stated, inserts `proposed` actions under one `batch_id`, returns counts and the drafted wording |
 | `confirm_actions` | Approves the batch, runs the executor, waits up to ~3.5 s, reports sent / simulated / failed / still running |
 | `cancel_actions` | Cancels a proposed batch |
-| `build_landing_page` | Starts a landing page build and deploy; the link is texted when it is live |
+| `build_landing_page` | Starts a landing page build and deploy; a stated percent-off offer becomes the project's discount, so the page and checkout charge the reduced price; the link is sent by text and email |
+| `get_recent_actions` | Reads back the last batch: recipients, status and exact wording, so the agent answers "what did you send?" from the record |
 
 ## Repo layout
 
 ```
-app/                      Next.js: home (/), project signup pages (/s/[slug]), /success, /login, /dashboard,
-                          /api/checkout, /api/signup, /api/onboard, /api/projects
+app/                      Next.js: home (/), project signup pages (/s/[slug]), /success, /login, /dashboard, /admin,
+                          /api/checkout, /api/signup, /api/onboard, /api/projects, /api/admin/data
 lib/                      Supabase clients, types
 supabase/migrations/      schema, RLS, realtime, SQL functions, warm pinger
 supabase/seed.sql         fake demo data

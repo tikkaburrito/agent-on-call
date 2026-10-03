@@ -22,6 +22,7 @@
     "- confirm_actions: actually send a proposed batch.",
     "- cancel_actions: drop a proposed batch.",
     "- build_landing_page: build and deploy a landing page for the business and text the link to the owner.",
+    "- get_recent_actions: what the most recent batch said and what happened to it.",
     "",
     "Businesses and projects:",
     "- A business has one or more projects. Each project is one offer with its own customers and orders.",
@@ -29,15 +30,17 @@
     "- To act on a business with several projects, pass the project argument with the project name the owner said. If a tool asks which project, ask the owner and call it again.",
     "",
     "Rules for taking action:",
-    "- To act, first call propose_actions. Read its summary back in one or two sentences, then ask: Should I go ahead?",
+    "- To act, first call propose_actions. Put everything the owner wants the message to say into intent, in their words, including any offer, discount, price or date. Then tell the owner the counts and the gist of the drafted wording in one or two sentences, and ask: Should I go ahead?",
     "- Call confirm_actions only after a clear yes in the owner's very next turn, such as yes, go ahead, or do it. Pass the batch_id from propose_actions.",
     "- If the reply is unclear, such as hmm, maybe, or I guess, do not confirm. Ask again.",
     "- If the owner says no, wait, stop, or changes the request, call cancel_actions with the batch_id before doing anything else.",
     "- After confirm_actions, report the sent, simulated and failed counts plainly. Simulated means demo recipients, nothing was actually sent to them.",
     "- Welcome messages go to the welcome_pending segment. Invoices for unpaid orders go to the unpaid segment. Use customer_ids only for specific people found with find_customers.",
-    "- For build_landing_page, no confirmation is needed. Pass the owner's own description as intent. Only pass product_name or price_cents if the owner states a new product or price. Then tell them the link will arrive by text and email in about a minute.",
+    "- For build_landing_page, no confirmation is needed. Pass the owner's own description as intent. If the owner states a percent-off offer, pass it as discount_percent so the page and the checkout use the discounted price. Only pass product_name or price_cents if the owner states a new product or regular price. Then tell them the link will arrive by text and email in about a minute.",
     "",
     "Truthfulness:",
+    "- propose_actions returns the drafted wording. When you describe a message, use that wording. Never claim a message says something the wording does not say.",
+    "- If the owner asks what was sent, or whether something was included, call get_recent_actions and answer from its result.",
     "- Never invent customers, amounts, links or results. State only what tools return.",
     "- If a tool finds nobody, say so. Do not guess a name.",
     "- If a tool fails, apologize briefly and offer to try again.",
@@ -90,7 +93,7 @@
     },
     {
       "name": "propose_actions",
-      "description": "Draft a batch of emails, texts and invoices for the owner to approve. Sends nothing. Returns a spoken summary and a batch_id. Each item targets either a segment or specific customer_ids.",
+      "description": "Draft a batch of emails, texts and invoices for the owner to approve. Sends nothing. Returns counts, the drafted wording, and a batch_id. Each item targets either a segment or specific customer_ids.",
       "startMessage": "One moment while I draft that.",
       "parameters": {
         "type": "object",
@@ -129,7 +132,7 @@
                 },
                 "intent": {
                   "type": "string",
-                  "description": "What the owner wants this message to do, in their words."
+                  "description": "Everything the owner wants this message to say, in their words, including any offer, discount, price or date they stated."
                 },
                 "amount_cents": {
                   "type": "integer",
@@ -212,10 +215,28 @@
           "project": {
             "type": "string",
             "description": "Project name, when the business has more than one project. Optional for reading, required for acting."
+          },
+          "discount_percent": {
+            "type": "integer",
+            "description": "Percent off the regular price, if the owner states an offer like 50 percent off. 0 removes the discount."
           }
         }
       }
+    },
+    {
+      "name": "get_recent_actions",
+      "description": "Read back the most recent batch of emails, texts and invoices for this business: who they went to, their status, and their exact wording. Use it when the owner asks what was sent or whether something was included.",
+      "startMessage": "Let me check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
     }
   ],
-  "toolFailedMessage": "Sorry, that didn't go through on my end. Want me to try again?"
+  "toolFailedMessage": "Sorry, that didn't go through on my end. Want me to try again?",
+  "serverMessages": [
+    "transcript[transcriptType=\"final\"]",
+    "status-update",
+    "end-of-call-report"
+  ]
 }

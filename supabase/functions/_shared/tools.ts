@@ -9,8 +9,10 @@ import {
   firstName,
   FUNCTIONS_URL,
   keepAlive,
+  salePrice,
   SERVICE_KEY,
   type Site,
+  statedDiscount,
 } from "./db.ts";
 
 type Args = Record<string, unknown>;
@@ -32,6 +34,10 @@ const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const preview = (s: string, max: number) => {
+  const flat = s.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}...` : flat;
+};
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 // One project: always that one. Several: match the spoken project name.
@@ -208,6 +214,7 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     return {
       site_id: siteId,
       batch_id: batchId,
+      call_id: ctx.callId ?? null,
       type: item.type,
       customer_id: customer.id,
       status: "proposed",
@@ -237,8 +244,19 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     parts.push(`${plural(count("invoice"), "invoice")} totaling ${dollars(total)}`);
   }
   const where = ctx.sites.length > 1 ? ` for ${site.product_name}` : "";
+  // The drafted wording, so the agent describes what will really be sent.
+  const previews = items
+    .map((item, i) => {
+      const row = rows.find((r, j) => planned[j].itemIndex === i);
+      if (!row) return "";
+      const label = item.type === "sms" ? "Text" : item.type === "invoice" ? "Invoice email" : "Email";
+      const subject = row.payload.subject ? ` subject "${row.payload.subject}",` : "";
+      return `${label}${subject} says: "${preview(row.payload.body, 190)}"`;
+    })
+    .filter(Boolean)
+    .join(" ");
   return oneLine(
-    `Proposed${where}: ${parts.join(", ")}.${skipNote} Nothing is sent yet. Read this back and ask "Should I go ahead?" batch_id: ${batchId}`,
+    `Proposed${where}: ${parts.join(", ")}.${skipNote} ${previews} Nothing is sent yet. Tell the owner the counts and the gist of the wording, then ask "Should I go ahead?" batch_id: ${batchId}`,
   );
 }
 
@@ -334,6 +352,12 @@ export async function build_landing_page(ctx: CallerContext, args: Args): Promis
   }
   const price = Number(args.price_cents);
   if (Number.isInteger(price) && price >= 100 && price <= 1_000_000) update.price_cents = price;
+  // A percent-off offer the owner stated becomes the project's discount, so the
+  // page and the checkout charge the discounted price.
+  const intent = typeof args.intent === "string" ? args.intent : "";
+  const given = Number(args.discount_percent);
+  const discount = Number.isInteger(given) && given >= 0 && given <= 90 ? given : statedDiscount(intent);
+  if (discount !== null && discount !== undefined && !Number.isNaN(discount)) update.discount_percent = discount;
   if (Object.keys(update).length) {
     const { error } = await db.from("sites").update(update).eq("id", siteId);
     if (error) throw new Error(error.message);
@@ -341,7 +365,7 @@ export async function build_landing_page(ctx: CallerContext, args: Args): Promis
 
   const { data: build, error } = await db
     .from("site_builds")
-    .insert({ site_id: siteId, status: "building" })
+    .insert({ site_id: siteId, status: "building", call_id: ctx.callId ?? null })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -359,10 +383,48 @@ export async function build_landing_page(ctx: CallerContext, args: Args): Promis
   await Promise.race([kickoff.catch(() => null), sleep(2500)]);
 
   const product = (update.product_name as string) ?? site.product_name;
-  const cents = (update.price_cents as number) ?? site.price_cents;
+  const now = { ...site, ...update } as Site;
+  const priceText = now.discount_percent
+    ? `${dollars(salePrice(now))}, which is ${now.discount_percent} percent off the regular ${dollars(now.price_cents)}`
+    : dollars(now.price_cents);
   return oneLine(
-    `Building a landing page for ${site.name} selling the ${product} at ${dollars(cents)}. It deploys in about a minute and the link will be sent to the owner by text and email.`,
+    `Building a landing page for ${site.name} selling the ${product} at ${priceText}. It deploys in about a minute and the link will be sent to the owner by text and email.`,
   );
+}
+
+// ---------------------------------------------------------------- get_recent_actions
+
+// What the last batch actually said and what happened to it, so the agent can
+// answer "what did you send?" from the record instead of from memory.
+export async function get_recent_actions(ctx: CallerContext): Promise<string> {
+  const siteIds = ctx.sites.map((s) => s.id);
+  const { data: latest } = await db
+    .from("actions")
+    .select("batch_id")
+    .in("site_id", siteIds)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (!latest?.length) return "Nothing has been proposed or sent yet for this business.";
+  const { data: rows, error } = await db
+    .from("actions")
+    .select("type, status, payload, result, customers(name)")
+    .eq("batch_id", latest[0].batch_id)
+    .in("site_id", siteIds)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  const all = rows ?? [];
+  const word: Record<string, string> = { executed: "sent", simulated: "simulated", failed: "failed", proposed: "waiting for a yes", cancelled: "cancelled", approved: "sending", executing: "sending" };
+  const shown = all.slice(0, 3).map((a) => {
+    const payload = a.payload as { subject?: string; body?: string };
+    const result = (a.result ?? {}) as { error?: string };
+    const to = (a.customers as unknown as { name?: string } | null)?.name ?? "a customer";
+    const kind = a.type === "sms" ? "Text" : a.type === "invoice" ? "Invoice" : "Email";
+    const subject = payload.subject ? ` Subject "${payload.subject}".` : "";
+    const why = a.status === "failed" && result.error ? ` Reason: ${preview(result.error, 110)}.` : "";
+    return `${kind} to ${to}, ${word[a.status] ?? a.status}.${subject} It says: "${preview(payload.body ?? "", 200)}"${why}`;
+  });
+  const more = all.length > 3 ? ` Plus ${all.length - 3} more in the same batch.` : "";
+  return oneLine(`Most recent batch, ${plural(all.length, "action")}. ${shown.join(" ")}${more}`);
 }
 
 // ---------------------------------------------------------------- dispatch
@@ -381,6 +443,8 @@ export function runTool(name: string, ctx: CallerContext, args: Args): Promise<s
       return cancel_actions(ctx, args);
     case "build_landing_page":
       return build_landing_page(ctx, args);
+    case "get_recent_actions":
+      return get_recent_actions(ctx);
     default:
       return Promise.reject(new Error(`unknown tool ${name}`));
   }
