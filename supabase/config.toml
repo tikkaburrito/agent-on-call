@@ -410,3 +410,6 @@ verify_jwt = false
 
 [functions.site-builder]
 verify_jwt = false
+
+[functions.automations]
+verify_jwt = false

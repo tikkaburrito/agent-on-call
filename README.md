@@ -68,12 +68,31 @@ A user signs up with a username, a password and their mobile number, then adds t
 - **Stripe test mode only.** The Stripe helper refuses any key that is not `sk_test_`.
 - **Model output is data.** Claude writes words (message copy, landing page copy as JSON). It never writes HTML or SQL; the landing page template escapes every value.
 
+## Automations
+
+An owner can switch on three standing rules per project by voice. The agent describes the rule and gets a yes before turning it on; that yes is the standing approval, and after it the rule sends without a call.
+
+| Rule | What it sends |
+|---|---|
+| `welcome_new_signups` | A welcome email to every new signup |
+| `remind_unpaid` | One reminder email with the page link once an order has been unpaid for the delay |
+| `invoice_unpaid` | One Stripe invoice by email once an order has been unpaid for the delay |
+
+`pg_cron` calls the `automations` edge function every minute. It creates `approved` actions marked `source = 'automation'` and hands them to the same executor as spoken batches, so the allowlist, idempotency and logging are identical. Each customer gets each rule at most once.
+
+## The phone side
+
+- **Greeting by name.** The phone number asks `vapi-tools` who should answer (`assistant-request`). The function looks up the caller and returns the assistant with a personal first message; unknown numbers are told the number isn't registered.
+- **The repo is the source of truth.** `vapi/assistant.json` holds the prompt, tools, greeting and call settings; `npx tsx vapi/setup.ts` applies them. Editing the assistant in the Vapi dashboard from a tab opened earlier overwrites tools and prompt; re-run the script to restore them.
+- **Quiet callers are not dropped.** The silence timeout is 3 minutes, with a spoken "still here" check-in after 15 seconds.
+
 ## Admin console (`/admin`)
 
 For the operator of the platform (a profile with `is_admin`; grant it with `npx tsx scripts/make-admin.ts <username>`).
 
 - **Calls**: every call, live. The assistant reports final transcript lines, status changes and the end-of-call report to `vapi-tools`, which stores them in `calls` and `call_events`; the page updates over Realtime while the call is still going.
 - **Per call**: the transcript, each tool call with its arguments, result and duration, and then what came out of it: the emails, texts and invoices with their exact wording and delivery status, and any landing page that was built.
+- **Automations**: which rules are on, and everything they have sent.
 - **Users and businesses**: who owns what, which phone they call from (last four digits), their projects, prices and pages.
 
 `npx tsx scripts/backfill-calls.ts` imports earlier calls from Vapi.
@@ -89,6 +108,10 @@ For the operator of the platform (a profile with `is_admin`; grant it with `npx 
 | `cancel_actions` | Cancels a proposed batch |
 | `build_landing_page` | Starts a landing page build and deploy; a stated percent-off offer becomes the project's discount, so the page and checkout charge the reduced price; the link is sent by text and email |
 | `get_recent_actions` | Reads back the last batch: recipients, status and exact wording, so the agent answers "what did you send?" from the record |
+| `get_project` | "Look at my landing page": price and discount, customers and revenue, the page's address and its current headline, text, points and button, and which automations are on |
+| `create_project` | A new offer under the business with its own signup page, and a landing page built straight away |
+| `set_automation` | Turns a standing rule on or off: auto-welcome new signups, auto-remind unpaid orders, auto-invoice unpaid orders |
+| `add_customer`, `mark_paid` | Add a customer by voice; record a payment made outside Stripe |
 
 ## Repo layout
 
@@ -154,6 +177,7 @@ npx tsx scripts/m3-executor.ts    # real sends to the allowlist, simulated for s
 bash scripts/m4-tools.sh          # every tool over HTTP: caller recognition, projects, auth, isolation, timing
 npx tsx scripts/m6-builder.ts     # landing page build, public URL, checkout from the page
 npx tsx scripts/m7-realtime.ts    # realtime to the owner, nothing to a second user
+npx tsx scripts/m8-automations.ts # rules off do nothing; on: one action per customer, no duplicates
 bash scripts/qa-bundle.sh         # no server secrets in the client bundle
 npx tsx scripts/reset-demo.ts     # back to the seeded state before a rehearsal
 ```
@@ -169,7 +193,6 @@ npx tsx scripts/reset-demo.ts     # back to the seeded state before a rehearsal
 - Google sign-in, and verifying the caller's phone with a text code at signup (today the number is taken on trust).
 - Several businesses per user (the schema already allows it), and onboarding by phone.
 - Stripe Connect so each business is paid into its own account.
-- Standing rules ("always welcome new signups within five minutes").
 - Outbound calls from the agent to the owner.
 - Freeform questions over the data, beyond the fixed read functions.
 - Richer site builder: multiple pages, custom domains, edits by voice.

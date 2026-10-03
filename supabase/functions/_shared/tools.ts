@@ -399,7 +399,7 @@ export async function build_landing_page(ctx: CallerContext, args: Args): Promis
   // page and the checkout charge the discounted price.
   const intent = typeof args.intent === "string" ? args.intent : "";
   const given = Number(args.discount_percent);
-  const discount = Number.isInteger(given) && given >= 0 && given <= 90 ? given : statedDiscount(intent);
+  const discount = Number.isInteger(given) && given >= 0 && given <= 100 ? given : statedDiscount(intent);
   if (discount !== null && discount !== undefined && !Number.isNaN(discount)) update.discount_percent = discount;
   if (Object.keys(update).length) {
     const { error } = await db.from("sites").update(update).eq("id", siteId);
@@ -455,6 +455,182 @@ export async function get_recent_actions(ctx: CallerContext): Promise<string> {
   return oneLine(`Most recent batch, ${plural(all.length, "action")}. ${shown.join(" ")}${more}`);
 }
 
+// ---------------------------------------------------------------- get_project
+
+const AUTOMATION_KINDS = ["welcome_new_signups", "remind_unpaid", "invoice_unpaid"] as const;
+type AutomationKind = (typeof AUTOMATION_KINDS)[number];
+const hours = (minutes: number) => (minutes % 60 === 0 ? plural(minutes / 60, "hour") : plural(minutes, "minute"));
+const describeAutomation = (kind: string, delay: number) =>
+  kind === "welcome_new_signups"
+    ? "automatic welcome emails to every new signup"
+    : kind === "remind_unpaid"
+      ? `an automatic reminder email when an order has been unpaid for ${hours(delay)}`
+      : `an automatic Stripe invoice by email when an order has been unpaid for ${hours(delay)}`;
+
+async function describeProject(site: Site, detailed: boolean): Promise<string> {
+  const [customers, orders, build, autos] = await Promise.all([
+    db.from("customers").select("*", { count: "exact", head: true }).eq("site_id", site.id),
+    db.from("orders").select("amount_cents, status").eq("site_id", site.id),
+    db.from("site_builds").select("copy").eq("site_id", site.id).eq("status", "live").order("created_at", { ascending: false }).limit(1),
+    db.from("automations").select("kind, delay_minutes").eq("site_id", site.id).eq("enabled", true),
+  ]);
+  const paid = (orders.data ?? []).filter((o) => o.status === "paid");
+  const unpaid = (orders.data ?? []).filter((o) => o.status === "pending");
+  const price = site.discount_percent
+    ? `${dollars(salePrice(site))} right now, ${site.discount_percent} percent off the regular ${dollars(site.price_cents)}`
+    : dollars(site.price_cents);
+  const numbers = `${plural(customers.count ?? 0, "customer")}, ${paid.length} paid for ${dollars(paid.reduce((n, o) => n + o.amount_cents, 0))}, ${unpaid.length} unpaid.`;
+  if (!detailed) {
+    return `Project ${site.product_name}: ${price}. ${numbers} ${site.landing_url ? "Has a landing page." : "No landing page yet."}`;
+  }
+  const copy = build.data?.[0]?.copy as { headline?: string; subhead?: string; benefits?: string[]; cta?: string } | undefined;
+  const page = site.landing_url
+    ? `Landing page at ${site.landing_url.replace("https://", "")}.` +
+      (copy?.headline
+        ? ` Headline: "${copy.headline}". Under it: "${copy.subhead ?? ""}". Points: ${(copy.benefits ?? []).join("; ")}. Button: "${copy.cta ?? ""}".`
+        : "")
+    : "No landing page built yet; signups use the hosted signup page. You can build one with build_landing_page.";
+  const on = (autos.data ?? []).map((a) => describeAutomation(a.kind, a.delay_minutes));
+  const automation = on.length ? `Automations on: ${on.join("; ")}.` : "No automations are on.";
+  return `Project ${site.product_name}: ${price}. ${numbers} ${page} ${automation}`;
+}
+
+// "Look at my landing page", "how is the project doing": everything about a project.
+export async function get_project(ctx: CallerContext, args: Args): Promise<string> {
+  const picked = pickSite(ctx, args.project);
+  if (ctx.sites.length === 0) return `${ctx.business.name} has no projects yet. Offer to create one with create_project.`;
+  const parts = await Promise.all((picked ? [picked] : ctx.sites).map((s) => describeProject(s, !!picked)));
+  const hint = picked ? "" : " Ask for one project by name for its landing page wording and automations.";
+  return oneLine(`Business: ${ctx.business.name}. ${parts.join(" ")}${hint}`);
+}
+
+// ---------------------------------------------------------------- create_project
+
+const slugify = (text: string) =>
+  text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "project";
+
+// A new offer under the caller's business, with its own signup page.
+export async function create_project(ctx: CallerContext, args: Args): Promise<string> {
+  const product = typeof args.product_name === "string" ? args.product_name.trim().slice(0, 80) : "";
+  const price = Number(args.price_cents);
+  if (!product) return "I need a name for what the new project sells. Ask the owner.";
+  if (!Number.isInteger(price) || price < 100 || price > 1_000_000) {
+    return "I need the regular price for the new project, between 1 and 10,000 dollars. Ask the owner.";
+  }
+  if (ctx.sites.some((s) => norm(s.product_name) === norm(product))) {
+    return `${ctx.business.name} already has a project called ${product}. Use build_landing_page to change its page.`;
+  }
+  if (ctx.sites.length >= 10) return "This business already has 10 projects, which is the limit.";
+
+  const base = slugify(`${ctx.business.name} ${product}`);
+  let site: Site | null = null;
+  for (let attempt = 0; attempt < 4 && !site; attempt++) {
+    const slug = attempt === 0 ? base : `${base}-${Math.random().toString(36).slice(2, 6)}`;
+    const { data, error } = await db
+      .from("sites")
+      .insert({ business_id: ctx.business.id, name: ctx.business.name, slug, product_name: product, price_cents: price })
+      .select("id, business_id, name, slug, product_name, price_cents, discount_percent, landing_url, subhead")
+      .single();
+    if (!error) site = data as unknown as Site;
+    else if (error.code !== "23505") throw new Error(error.message);
+  }
+  if (!site) throw new Error("could not find a free address for the project");
+  ctx.sites.push(site);
+
+  const appUrl = (Deno.env.get("NEXT_PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
+  let page = "";
+  if (args.build_page !== false) {
+    const intent = typeof args.intent === "string" ? args.intent.slice(0, 400) : "";
+    const kickoff = startBuild(site, ctx.callId, intent);
+    keepAlive(kickoff);
+    await Promise.race([kickoff.catch(() => null), sleep(2500)]);
+    page = " A landing page is being built now; the link will arrive by text and email in about a minute.";
+  }
+  return oneLine(
+    `Created the project ${product} at ${dollars(price)} under ${ctx.business.name}. Its signup page is live at ${appUrl.replace("https://", "")}/s/${site.slug}.${page}`,
+  );
+}
+
+// ---------------------------------------------------------------- set_automation
+
+// Switching one on is the owner's standing approval: after that the rule sends
+// without a call. The assistant must describe it and get a clear yes first.
+export async function set_automation(ctx: CallerContext, args: Args): Promise<string> {
+  const site = pickSite(ctx, args.project);
+  if (!site) return whichProject(ctx);
+  const kind = args.kind as AutomationKind;
+  if (!AUTOMATION_KINDS.includes(kind)) {
+    return "There are three automations: welcome_new_signups, remind_unpaid and invoice_unpaid. Ask the owner which one.";
+  }
+  if (typeof args.enabled !== "boolean") return "Say whether to turn it on or off.";
+  const delayHours = Number(args.delay_hours);
+  const delay = Number.isFinite(delayHours) && delayHours > 0 ? Math.min(Math.round(delayHours * 60), 43200) : undefined;
+
+  const { data: existing } = await db.from("automations").select("delay_minutes").eq("site_id", site.id).eq("kind", kind).maybeSingle();
+  const delay_minutes = delay ?? existing?.delay_minutes ?? 60;
+  const { error } = await db
+    .from("automations")
+    .upsert({ site_id: site.id, kind, enabled: args.enabled, delay_minutes, updated_at: new Date().toISOString() }, { onConflict: "site_id,kind" });
+  if (error) throw new Error(error.message);
+
+  const what = describeAutomation(kind, delay_minutes);
+  return args.enabled
+    ? oneLine(`On for ${site.product_name}: ${what}. It runs every minute without a call, once per customer, and only reaches people on the send allowlist.`)
+    : `Off for ${site.product_name}: ${what.replace("automatic ", "")} will no longer be sent automatically.`;
+}
+
+// ---------------------------------------------------------------- add_customer / mark_paid
+
+function toE164(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const digits = raw.replace(/\D/g, "");
+  if (raw.trim().startsWith("+") && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
+export async function add_customer(ctx: CallerContext, args: Args): Promise<string> {
+  const site = pickSite(ctx, args.project);
+  if (!site) return whichProject(ctx);
+  const name = typeof args.name === "string" ? args.name.trim().slice(0, 100) : "";
+  const email = typeof args.email === "string" ? args.email.trim().toLowerCase().replace(/\s+/g, "") : "";
+  if (!name) return "I need the customer's name.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "That email address doesn't look right. Ask the owner to spell it out.";
+  const phone = toE164(args.phone);
+
+  const { data: dupe } = await db.from("customers").select("id").eq("site_id", site.id).eq("email", email).limit(1);
+  if (dupe?.length) return `${email} is already a customer of ${site.product_name}. Nothing was added.`;
+  const { error } = await db
+    .from("customers")
+    .insert({ site_id: site.id, name, email, phone, consent: args.sms_consent === true && !!phone });
+  if (error) throw new Error(error.message);
+  return oneLine(`Added ${name}, ${email}, to ${site.product_name}. They count as a new signup who has not been welcomed yet.`);
+}
+
+// For a customer who paid outside Stripe (cash, bank transfer).
+export async function mark_paid(ctx: CallerContext, args: Args): Promise<string> {
+  const query = typeof args.customer === "string" ? args.customer.trim() : "";
+  if (!query) return "Which customer paid? Ask for their name.";
+  const perSite = await Promise.all(ctx.sites.map((s) => findCustomers(s.id, query, "unpaid")));
+  const matches = perSite.flat();
+  if (matches.length === 0) return `No customer matching "${query}" has an unpaid order. Nothing was changed.`;
+  if (matches.length > 1) {
+    return `${matches.length} customers match "${query}" with unpaid orders: ${matches.slice(0, 3).map((c) => c.name).join(", ")}. Ask which one.`;
+  }
+  const customer = matches[0];
+  const { data, error } = await db
+    .from("orders")
+    .update({ status: "paid", paid_at: new Date().toISOString() })
+    .eq("customer_id", customer.id)
+    .in("site_id", ctx.sites.map((s) => s.id))
+    .eq("status", "pending")
+    .select("amount_cents");
+  if (error) throw new Error(error.message);
+  const total = (data ?? []).reduce((n, o) => n + o.amount_cents, 0);
+  return `Marked ${customer.name} as paid: ${plural(data?.length ?? 0, "order")} for ${dollars(total)}.`;
+}
+
 // ---------------------------------------------------------------- dispatch
 
 export function runTool(name: string, ctx: CallerContext, args: Args): Promise<string> {
@@ -473,6 +649,16 @@ export function runTool(name: string, ctx: CallerContext, args: Args): Promise<s
       return build_landing_page(ctx, args);
     case "get_recent_actions":
       return get_recent_actions(ctx);
+    case "get_project":
+      return get_project(ctx, args);
+    case "create_project":
+      return create_project(ctx, args);
+    case "set_automation":
+      return set_automation(ctx, args);
+    case "add_customer":
+      return add_customer(ctx, args);
+    case "mark_paid":
+      return mark_paid(ctx, args);
     default:
       return Promise.reject(new Error(`unknown tool ${name}`));
   }

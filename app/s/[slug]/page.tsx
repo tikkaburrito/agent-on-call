@@ -51,7 +51,7 @@ export default async function ProjectPage({ params }: PageProps<"/s/[slug]">) {
               {price}
             </p>
           </div>
-          <BookingForm siteId={site.id} cta={`Book for ${price}`} />
+          <BookingForm siteId={site.id} cta={salePrice(site) === 0 ? "Get it free" : `Book for ${price}`} />
           <p className="mt-4 text-center text-xs text-stone-500">
             Secure checkout by Stripe. Demo site: payments run in test mode.
           </p>

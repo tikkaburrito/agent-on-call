@@ -31,9 +31,9 @@ export const salePrice = (site: { price_cents: number; discount_percent?: number
 
 // A percent-off offer the owner stated, e.g. "50 percent off" -> 50.
 export function statedDiscount(text: string): number | null {
-  const m = text.match(/(\d{1,2})\s*(?:%|percent|per cent)/i);
+  const m = text.match(/(\d{1,3})\s*(?:%|percent|per cent)/i);
   const n = m ? Number(m[1]) : NaN;
-  return n >= 1 && n <= 90 ? n : null;
+  return n >= 1 && n <= 100 ? n : null;
 }
 
 export const SITE_COLUMNS = "id, business_id, name, slug, product_name, price_cents, discount_percent, landing_url, subhead";
@@ -138,9 +138,9 @@ export async function isInternalCall(req: Request): Promise<boolean> {
 }
 
 export const dollars = (cents: number) =>
-  cents % 100 === 0 ? `${cents / 100} dollars` : `${(cents / 100).toFixed(2)} dollars`;
+  cents === 0 ? "free" : cents % 100 === 0 ? `${cents / 100} dollars` : `${(cents / 100).toFixed(2)} dollars`;
 
-export const usd = (cents: number) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+export const usd = (cents: number) => (cents === 0 ? "Free" : `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`);
 
 export const firstName = (name: string) => name.trim().split(/\s+/)[0] || "there";
 

@@ -8,6 +8,8 @@ import {
   type Action,
   type ActionStatus,
   type AttentionItem,
+  type Automation,
+  AUTOMATION_LABEL,
   type Business,
   type Customer,
   dollars,
@@ -131,6 +133,7 @@ export default function Dashboard() {
   const [actions, setActions] = useState<ActionWithCustomer[]>([]);
   const [customers, setCustomers] = useState<CustomerWithOrders[]>([]);
   const [build, setBuild] = useState<SiteBuild | null>(null);
+  const [automations, setAutomations] = useState<Automation[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [live, setLive] = useState(false);
 
@@ -164,6 +167,8 @@ export default function Dashboard() {
         supabase.from("site_builds").select("*").eq("site_id", id).order("created_at", { ascending: false }).limit(1),
         supabase.from("sites").select("*").eq("id", id).maybeSingle(),
       ]);
+      const autos = await supabase.from("automations").select("*").eq("site_id", id).eq("enabled", true);
+      setAutomations((autos.data ?? []) as Automation[]);
       setAttention((att.data ?? []) as AttentionItem[]);
       setActions((act.data ?? []) as ActionWithCustomer[]);
       setCustomers((cust.data ?? []) as CustomerWithOrders[]);
@@ -185,7 +190,7 @@ export default function Dashboard() {
     void refresh(selected);
     const filter = `site_id=eq.${selected}`;
     const channel = supabase.channel(`project-${selected}`);
-    for (const table of ["actions", "customers", "orders", "site_builds"]) {
+    for (const table of ["actions", "customers", "orders", "site_builds", "automations"]) {
       channel.on("postgres_changes", { event: "*", schema: "public", table, filter }, () => void refresh(selected));
     }
     channel.subscribe((status) => setLive(status === "SUBSCRIBED"));
@@ -308,6 +313,20 @@ export default function Dashboard() {
             )}
           </p>
 
+          <p className="mt-3 flex flex-wrap items-center gap-2 text-base text-zinc-400">
+            Automations:
+            {automations.length === 0 ? (
+              <span>none on. Ask the agent to turn on automatic welcomes, reminders or invoices.</span>
+            ) : (
+              automations.map((a) => (
+                <span key={a.id} className="status-pop rounded-full bg-emerald-400/15 px-3 py-1 text-sm font-semibold text-emerald-300">
+                  {AUTOMATION_LABEL[a.kind]}
+                  {a.kind !== "welcome_new_signups" ? ` after ${a.delay_minutes >= 60 ? `${Math.round(a.delay_minutes / 60)}h` : `${a.delay_minutes}m`}` : ""}
+                </span>
+              ))
+            )}
+          </p>
+
           <section aria-label="Needs attention" className="mt-6 grid gap-4 md:grid-cols-3">
             {KINDS.map(({ kind, label }) => {
               const rows = attention.filter((a) => a.kind === kind);
@@ -345,7 +364,12 @@ export default function Dashboard() {
                     >
                       <span className="w-20 shrink-0 text-lg font-semibold text-amber-400">{TYPE_LABEL[a.type]}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xl font-medium">{a.customers?.name ?? "Customer"}</span>
+                        <span className="block truncate text-xl font-medium">
+                          {a.customers?.name ?? "Customer"}
+                          {a.source === "automation" && (
+                            <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 align-middle text-xs font-semibold text-emerald-300">auto</span>
+                          )}
+                        </span>
                         <span className="block truncate text-base text-zinc-400">
                           {a.type === "sms" ? a.customers?.phone : a.customers?.email}
                           {a.type === "invoice" && a.payload.amount_cents ? ` · ${dollars(a.payload.amount_cents)}` : ""}

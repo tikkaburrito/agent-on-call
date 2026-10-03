@@ -43,6 +43,19 @@ export async function GET() {
     db.from("profiles").select("id, username, full_name, phone, is_admin"),
   ]);
 
+  const [rules, autoActions] = await Promise.all([
+    db.from("automations").select("id, site_id, kind, enabled, delay_minutes, updated_at").eq("enabled", true),
+    db
+      .from("actions")
+      .select("id, site_id, type, status, payload, result, created_at, customers(name, email)")
+      .eq("source", "automation")
+      .order("created_at", { ascending: false })
+      .limit(40),
+  ]);
+  const projectOf = new Map(
+    (businesses.data ?? []).flatMap((b) => (b.sites ?? []).map((s) => [s.id, { business: b.name, project: s.product_name }] as const)),
+  );
+
   const owners = new Map((profiles.data ?? []).map((p) => [p.id, p]));
   const names = new Map((businesses.data ?? []).map((b) => [b.id, b.name]));
 
@@ -62,6 +75,10 @@ export async function GET() {
       actions: (actions.data ?? []).filter((a) => a.call_id === c.id),
       builds: (builds.data ?? []).filter((b) => b.call_id === c.id),
     })),
+    automations: {
+      rules: (rules.data ?? []).map((r) => ({ ...r, ...projectOf.get(r.site_id) })),
+      actions: (autoActions.data ?? []).map((a) => ({ ...a, ...projectOf.get(a.site_id) })),
+    },
     businesses: (businesses.data ?? []).map((b) => {
       const owner = b.owner_id ? owners.get(b.owner_id) : null;
       return {

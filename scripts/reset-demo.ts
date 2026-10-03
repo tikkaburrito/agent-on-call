@@ -13,6 +13,15 @@ const isSeed = (id: string) => /^[a-d][03]000000-0000-4000-8000-/.test(id);
 async function main() {
   const db = admin();
   const sites = [SITE_A, SITE_B, SITE_C];
+
+  // Projects the tests created under the demo businesses, and any automations.
+  const { data: extra } = await db.from("sites").select("id").in("business_id", [SITE_A, SITE_B]).not("id", "in", `(${sites.join(",")})`);
+  const extraSites = (extra ?? []).map((s) => s.id);
+  if (extraSites.length) {
+    for (const table of ["actions", "site_builds", "orders", "customers"]) await db.from(table).delete().in("site_id", extraSites);
+    await db.from("sites").delete().in("id", extraSites);
+  }
+  await db.from("automations").delete().in("site_id", sites);
   await db.from("actions").delete().in("site_id", sites);
   await db.from("site_builds").delete().in("site_id", sites);
   // Call log entries created by the test scripts (real Vapi call ids are UUIDs).

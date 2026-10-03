@@ -88,6 +88,19 @@ echo "== consent"
 call propose_actions '{"project": "Intro class pack", "items": [{"type": "sms", "customer_ids": ["a0000000-0000-4000-8000-000000000004", "a0000000-0000-4000-8000-000000000006"], "intent": "say hi"}]}'
 has "skipped for texts"; check "no-consent and no-phone customers get no SMS row" $?
 
+echo "== project, landing page, automations, customers"
+call get_project '{"project": "Intro class pack"}' "$OWNER_PHONE"; has "Project Intro class pack" && has "customer"; check "get_project describes the project" $?
+has "landing page"; check "get_project reports on the landing page" $?
+call set_automation '{"project": "Monthly membership", "kind": "welcome_new_signups", "enabled": true}' "$OWNER_PHONE"; has "On for Monthly membership"; check "set_automation turns a rule on" $?
+call get_project '{"project": "Monthly membership"}' "$OWNER_PHONE"; has "Automations on: automatic welcome"; check "get_project lists the rule" $?
+call set_automation '{"project": "Monthly membership", "kind": "welcome_new_signups", "enabled": false}' "$OWNER_PHONE"; has "Off for Monthly membership"; check "set_automation turns it off" $?
+call set_automation '{"project": "Tasting flight", "kind": "welcome_new_signups", "enabled": true}' "$OWNER_PHONE"; has "which project"; check "cannot set a rule on another business's project" $?
+call add_customer '{"project": "Monthly membership", "name": "QA Voice", "email": "qa-voice@example.com"}' "$OWNER_PHONE"; has "Added QA Voice"; check "add_customer adds to the project" $?
+call add_customer '{"project": "Monthly membership", "name": "QA Voice", "email": "qa-voice@example.com"}' "$OWNER_PHONE"; has "already a customer"; check "add_customer refuses a duplicate" $?
+call mark_paid '{"customer": "zzz-nobody"}' "$OWNER_PHONE"; has "Nothing was changed"; check "mark_paid invents nobody" $?
+call create_project '{"product_name": "QA Workshop", "price_cents": 2500, "build_page": false}' "$OWNER_PHONE"; has "Created the project QA Workshop"; check "create_project adds a project to the business" $?
+call get_attention_items '{"project": "QA Workshop"}' "$OWNER_PHONE"; has "Project QA Workshop"; check "the new project is usable straight away" $?
+
 echo
 check "every call under 5 s" "$(node -e "process.exit($SLOWEST < 5 ? 0 : 1)"; echo $?)" "slowest ${SLOWEST}s"
 [ "$FAILS" -eq 0 ] && echo "All checks passed." || echo "$FAILS check(s) FAILED."

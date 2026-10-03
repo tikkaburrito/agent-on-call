@@ -64,6 +64,14 @@ export async function POST(request: Request) {
     .single();
   if (orderError) return json({ error: "Could not create your order." }, 500);
 
+  const appUrl = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
+
+  // A 100% off offer is free: nothing to charge, so the order is complete.
+  if (salePrice(site) === 0) {
+    await db.from("orders").update({ status: "paid", paid_at: new Date().toISOString() }).eq("id", order.id);
+    return json({ url: `${appUrl}/success?site=${site.id}` });
+  }
+
   // Test mode only: this demo must never take a real card payment. The signup
   // and pending order above still exist, so the agent can follow up.
   const stripeKey = process.env.STRIPE_SECRET_KEY ?? "";
@@ -71,7 +79,6 @@ export async function POST(request: Request) {
     return json({ error: "Payments are not set up in test mode yet. We saved your details." }, 502);
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
   try {
     const stripe = new Stripe(stripeKey);
     const session = await stripe.checkout.sessions.create({

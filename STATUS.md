@@ -40,6 +40,16 @@ Keys live in two places: Vercel (the website) and Supabase function secrets (the
 - **Offer emails link to the page.** Offer and follow-up emails and texts now include the project's page link (the landing page the agent built, otherwise the hosted signup page). When the owner approves a percent-off message, that discount is applied to the project and its landing page is rebuilt, so the link always shows the price the email promised.
 - **Call log.** Calls made before this change were imported from Vapi; new ones are logged live, with transcript lines synced from the conversation on every turn.
 
+## Added after the second round of calls
+
+- **Assistant restored.** A save from the Vapi dashboard had put back an old prompt with only 5 tools, which is why the agent said it could not build landing pages. It now has 12 tools again; the repo is the source of truth (`npx tsx vapi/setup.ts`).
+- **Greeting by name** through `assistant-request`. `npx tsx vapi/setup.ts --static-greeting` goes back to one fixed greeting.
+- **Dropped calls:** silence timeout raised from about 30 s to 3 minutes, "still here" check-in after 15 s, and the agent waits 0.8 s before replying.
+- **Landing page and offers by voice:** `get_project` (read the page), `build_landing_page` (rebuild), `create_project` (new offer + page), discounts up to 100% (free orders skip Stripe).
+- **Automations:** auto-welcome, auto-remind and auto-invoice, off until switched on by voice. `scripts/m8-automations.ts`: 8/8 pass.
+- **CRM by voice:** `add_customer`, `mark_paid`.
+- `scripts/m4-tools.sh` now has 39 checks, all passing.
+
 ## Notes
 
 - The Supabase project is on the free tier, so it is not billed.

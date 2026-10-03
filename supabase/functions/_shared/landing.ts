@@ -23,7 +23,7 @@ export function templateLanding(site: Site): LandingCopy {
     headline: `${site.product_name} at ${site.name}`,
     subhead: "Sign up below in under a minute. We'll take it from there.",
     benefits: ["Simple online booking", "Secure checkout", "Friendly, personal service"],
-    cta: `Get started for ${usd(salePrice(site))}`,
+    cta: salePrice(site) === 0 ? "Get started free" : `Get started for ${usd(salePrice(site))}`,
     accent: "amber",
   };
 }

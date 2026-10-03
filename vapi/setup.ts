@@ -4,7 +4,7 @@
 //
 //   npx tsx vapi/setup.ts            create/update tools + assistant
 //   npx tsx vapi/setup.ts --attach   also attach the account's only phone number
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { env } from "../scripts/_env";
 
 const API = "https://api.vapi.ai";
@@ -64,7 +64,9 @@ async function main() {
   const assistants: Assistant[] = await vapi("GET", "/assistant?limit=1000");
   const attachedIds = [...new Set(numbers.map((n) => n.assistantId).filter(Boolean))];
   const wanted = String(config.name).toLowerCase();
+  const savedId = process.env.VAPI_ASSISTANT_ID;
   const existing =
+    (savedId ? assistants.find((a) => a.id === savedId) : undefined) ??
     (attachedIds.length === 1 ? assistants.find((a) => a.id === attachedIds[0]) : undefined) ??
     assistants.find((a) => (a.name ?? "").toLowerCase() === wanted);
 
@@ -77,30 +79,58 @@ async function main() {
   // The assistant also reports transcripts and call status to the same
   // function, which keeps the call log for the admin console.
   const reporting = { server: { url: server.url, headers: server.headers }, serverMessages: config.serverMessages };
-  // An existing assistant keeps its own name, greeting and voice.
-  const assistant = existing
-    ? await vapi("PATCH", `/assistant/${existing.id}`, { model, ...reporting })
-    : await vapi("POST", "/assistant", {
-        name: config.name,
-        firstMessage: config.firstMessage,
-        firstMessageMode: "assistant-speaks-first",
-        model,
-        ...reporting,
-      });
+  // The repo is the source of truth for the greeting and call settings too.
+  // (Editing the assistant in the Vapi dashboard from a stale tab overwrites
+  // tools and prompt; re-run this script to put them back.)
+  const body = {
+    name: config.name,
+    firstMessage: config.firstMessage,
+    firstMessageMode: "assistant-speaks-first",
+    model,
+    ...reporting,
+    ...config.callSettings,
+  };
+  const save = (payload: Record<string, unknown>) =>
+    existing ? vapi("PATCH", `/assistant/${existing.id}`, payload) : vapi("POST", "/assistant", payload);
+  let assistant;
+  try {
+    assistant = await save(body);
+  } catch (e) {
+    // Older and newer API versions disagree on the silence timeout field.
+    if (!/silenceTimeoutSeconds/.test((e as Error).message)) throw e;
+    const { silenceTimeoutSeconds: _dropped, ...rest } = body as Record<string, unknown>;
+    assistant = await save(rest);
+    console.log("note: this Vapi API version has no silenceTimeoutSeconds; relying on the still-here hook");
+  }
   console.log(`${existing ? "updated" : "created"} assistant "${assistant.name ?? config.name}" with ${toolIds.length} tools`);
   console.log(`ASSISTANT_ID=${assistant.id}`);
 
-  // Phone number
-  const attached = numbers.find((n) => n.assistantId === assistant.id);
-  if (attached) {
-    console.log(`Phone number ${attached.number ?? attached.id} rings this assistant.`);
-  } else if (process.argv.includes("--attach") && numbers.length === 1) {
-    await vapi("PATCH", `/phone-number/${numbers[0].id}`, { assistantId: assistant.id });
-    console.log(`attached phone number ${numbers[0].number ?? numbers[0].id}`);
+  // The edge function needs the assistant id to answer assistant-request.
+  const envFile = readFileSync(".env.local", "utf8");
+  const line = `VAPI_ASSISTANT_ID=${assistant.id}`;
+  writeFileSync(
+    ".env.local",
+    /^VAPI_ASSISTANT_ID=.*$/m.test(envFile) ? envFile.replace(/^VAPI_ASSISTANT_ID=.*$/m, line) : `${envFile.replace(/\n*$/, "\n")}${line}\n`,
+  );
+
+  // Phone number. Default: the number asks our function who should answer
+  // (assistant-request), which lets us greet the caller by name.
+  // --static-greeting points the number straight at the assistant instead.
+  if (numbers.length !== 1) {
+    console.log(`MANUAL: ${numbers.length} phone numbers found; point the right one at this assistant in the Vapi dashboard.`);
+    return;
+  }
+  const number = numbers[0];
+  if (process.argv.includes("--static-greeting")) {
+    await vapi("PATCH", `/phone-number/${number.id}`, { assistantId: assistant.id });
+    console.log(`Phone number ${number.number ?? number.id} rings the assistant directly (same greeting for everyone).`);
   } else {
-    console.log(
-      `MANUAL: ${numbers.length} phone number(s) found, none ringing this assistant. Attach one in the Vapi dashboard, or re-run with --attach if there is exactly one.`,
-    );
+    await vapi("PATCH", `/phone-number/${number.id}`, {
+      assistantId: null,
+      server: { url: server.url, timeoutSeconds: 7, headers: server.headers },
+    });
+    console.log(`Phone number ${number.number ?? number.id} asks vapi-tools who should answer (greeting by name).`);
+    console.log("Run: bash scripts/push-secrets.sh   (so the function knows VAPI_ASSISTANT_ID)");
   }
 }
 

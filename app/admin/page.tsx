@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import { type ActionStatus, dollars } from "@/lib/types";
+import { type ActionStatus, AUTOMATION_LABEL, type Automation, dollars } from "@/lib/types";
 
 type CallEvent = {
   id: number;
@@ -46,6 +46,9 @@ type BusinessRow = {
   projects: { id: string; slug: string; product_name: string; price_cents: number; discount_percent: number; landing_url: string | null; customers: number }[];
 };
 
+type AutoRule = Automation & { business?: string; project?: string };
+type AutoAction = CallAction & { business?: string; project?: string };
+
 const STATUS_STYLE: Record<ActionStatus, string> = {
   proposed: "bg-zinc-700 text-zinc-100",
   approved: "bg-sky-500 text-sky-950",
@@ -64,6 +67,11 @@ const TOOL_LABEL: Record<string, string> = {
   cancel_actions: "Cancelled the batch",
   build_landing_page: "Started a landing page",
   get_recent_actions: "Read back what was sent",
+  get_project: "Looked at the project and its landing page",
+  create_project: "Created a new project",
+  set_automation: "Changed an automation",
+  add_customer: "Added a customer",
+  mark_paid: "Marked an order paid",
 };
 
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
@@ -79,9 +87,10 @@ export default function Admin() {
   const router = useRouter();
   const supabase = useMemo(() => supabaseBrowser(), []);
   const [state, setState] = useState<"loading" | "ready" | "denied">("loading");
-  const [tab, setTab] = useState<"calls" | "businesses">("calls");
+  const [tab, setTab] = useState<"calls" | "automations" | "businesses">("calls");
   const [calls, setCalls] = useState<Call[]>([]);
   const [businesses, setBusinesses] = useState<BusinessRow[]>([]);
+  const [auto, setAuto] = useState<{ rules: AutoRule[]; actions: AutoAction[] }>({ rules: [], actions: [] });
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -95,6 +104,7 @@ export default function Admin() {
     const data = await res.json();
     setCalls(data.calls);
     setBusinesses(data.businesses);
+    setAuto(data.automations ?? { rules: [], actions: [] });
     setSelected((current) => current ?? data.calls[0]?.id ?? null);
     setState("ready");
   }, [router]);
@@ -107,7 +117,7 @@ export default function Admin() {
       timer.current = setTimeout(() => void load(), 350);
     };
     const channel = supabase.channel("admin-console");
-    for (const table of ["calls", "call_events", "actions", "site_builds"]) {
+    for (const table of ["calls", "call_events", "actions", "site_builds", "automations"]) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, soon);
     }
     channel.subscribe((status) => setConnected(status === "SUBSCRIBED"));
@@ -161,12 +171,57 @@ export default function Admin() {
         <button onClick={() => setTab("calls")} className={tabClass(tab === "calls")}>
           Calls ({calls.length})
         </button>
+        <button onClick={() => setTab("automations")} className={tabClass(tab === "automations")}>
+          Automations ({auto.rules.length} on)
+        </button>
         <button onClick={() => setTab("businesses")} className={tabClass(tab === "businesses")}>
           Users and businesses ({businesses.length})
         </button>
       </nav>
 
-      {tab === "businesses" ? (
+      {tab === "automations" ? (
+        <section className="mt-6">
+          <h2 className="text-xl font-semibold">Switched on</h2>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {auto.rules.length === 0 && <li className="text-base text-zinc-400">No automations are on. Owners turn them on by asking the agent.</li>}
+            {auto.rules.map((r) => (
+              <li key={r.id} className="rounded-2xl bg-zinc-900 px-4 py-3 text-base ring-1 ring-zinc-800">
+                <span className="font-semibold text-emerald-300">{AUTOMATION_LABEL[r.kind]}</span>
+                {r.kind !== "welcome_new_signups" ? ` after ${r.delay_minutes >= 60 ? `${Math.round(r.delay_minutes / 60)}h` : `${r.delay_minutes}m`}` : ""}
+                <span className="text-zinc-400"> · {r.business} / {r.project}</span>
+              </li>
+            ))}
+          </ul>
+          <h2 className="mt-8 text-xl font-semibold">Sent automatically</h2>
+          <ul className="mt-3 flex flex-col gap-2">
+            {auto.actions.length === 0 && <li className="text-base text-zinc-400">Nothing has been sent by an automation yet.</li>}
+            {auto.actions.map((a) => (
+              <li key={a.id} className="row-in rounded-2xl bg-zinc-900 ring-1 ring-zinc-800">
+                <button onClick={() => setOpen(open === a.id ? null : a.id)} aria-expanded={open === a.id} className="flex w-full items-center gap-3 px-5 py-4 text-left">
+                  <span className="w-24 shrink-0 text-base font-semibold text-amber-400">{TYPE_LABEL[a.type]}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-lg font-medium">{a.customers?.name ?? "Customer"}</span>
+                    <span className="block truncate text-sm text-zinc-400">
+                      {a.business} / {a.project} · {day(a.created_at)} {clock(a.created_at)} · {a.payload.subject || a.payload.body}
+                    </span>
+                  </span>
+                  <span key={a.status} className={`status-pop shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${STATUS_STYLE[a.status]}`}>
+                    {a.status}
+                  </span>
+                </button>
+                {open === a.id && (
+                  <div className="border-t border-zinc-800 px-5 py-4 text-base leading-relaxed text-zinc-300">
+                    {a.payload.subject && <p className="font-semibold text-white">{a.payload.subject}</p>}
+                    <p className="mt-1 whitespace-pre-wrap">{a.payload.body}</p>
+                    {a.result?.error && <p className="mt-3 text-red-300">Failed: {a.result.error}</p>}
+                    {a.result?.reason && <p className="mt-3 text-violet-300">Not sent: {a.result.reason} (demo data).</p>}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : tab === "businesses" ? (
         <section className="mt-6 grid gap-4 lg:grid-cols-2">
           {businesses.map((b) => (
             <article key={b.id} className="rounded-2xl bg-zinc-900 p-6 ring-1 ring-zinc-800">

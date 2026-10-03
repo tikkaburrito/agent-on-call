@@ -3,7 +3,7 @@
 //
 // Two jobs: run the agent's tool calls, and keep a call log (transcripts, tool
 // calls, results, status) for the admin console.
-import { type CallerContext, contextForPhone, contextForSite, db, keepAlive, timingSafeEqual } from "../_shared/db.ts";
+import { type CallerContext, contextForPhone, contextForSite, db, firstName, keepAlive, timingSafeEqual } from "../_shared/db.ts";
 import { runTool } from "../_shared/tools.ts";
 
 type ToolCall = {
@@ -118,6 +118,38 @@ async function logEndOfCall(message: Message) {
   });
 }
 
+// ---------------------------------------------------------------- who answers
+
+// Vapi asks this before the call is answered (it allows 7.5 seconds). We look
+// up the caller and greet them by name. Any failure falls back to the plain
+// assistant rather than failing the call.
+async function answerAssistantRequest(message: Message): Promise<Record<string, unknown>> {
+  const assistantId = Deno.env.get("VAPI_ASSISTANT_ID");
+  if (!assistantId) return { error: "Agent on Call is not set up yet. Please try again later." };
+  try {
+    const number = callerNumber(message);
+    const ctx = number ? await contextForPhone(number) : null;
+    if (number && !ctx) {
+      return {
+        error:
+          "Hi, this is Agent on Call. This phone number isn't registered yet. Sign up on our website with this number, then call back. Goodbye.",
+      };
+    }
+    keepAlive(upsertCall(message, ctx ? { business_id: ctx.business.id } : {}));
+    if (!ctx) return { assistantId };
+    const name = ctx.owner?.full_name ? ` ${firstName(ctx.owner.full_name)}` : "";
+    return {
+      assistantId,
+      assistantOverrides: {
+        firstMessage: `Hi${name}, this is Agent Seven for ${ctx.business.name}. What can I do for you today?`,
+      },
+    };
+  } catch (e) {
+    console.error("assistant-request lookup failed:", (e as Error).message);
+    return { assistantId };
+  }
+}
+
 // ---------------------------------------------------------------- handler
 
 Deno.serve(async (req) => {
@@ -130,6 +162,8 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => null);
   const message: Message | undefined = body?.message;
   const type: string = message?.type ?? "unknown";
+
+  if (type === "assistant-request") return Response.json(await answerAssistantRequest(message!));
 
   if (type !== "tool-calls") {
     // Informational messages: record them after answering, so Vapi never waits.

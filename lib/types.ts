@@ -57,8 +57,23 @@ export type Action = {
   payload: { subject?: string; body?: string; amount_cents?: number; description?: string };
   status: ActionStatus;
   result: Record<string, unknown> | null;
+  source: string;
   created_at: string;
   executed_at: string | null;
+};
+
+export type Automation = {
+  id: string;
+  site_id: string;
+  kind: "welcome_new_signups" | "remind_unpaid" | "invoice_unpaid";
+  enabled: boolean;
+  delay_minutes: number;
+};
+
+export const AUTOMATION_LABEL: Record<Automation["kind"], string> = {
+  welcome_new_signups: "Auto-welcome new signups",
+  remind_unpaid: "Auto-remind unpaid orders",
+  invoice_unpaid: "Auto-invoice unpaid orders",
 };
 
 export type SiteBuild = {
@@ -83,7 +98,7 @@ export const DEMO_SITE_ID = "11111111-1111-4111-8111-111111111111";
 export const DEMO_BUSINESS_ID = "11111111-1111-4111-8111-111111111111";
 
 export const dollars = (cents: number) =>
-  `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+  cents === 0 ? "Free" : `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
 
 // What a customer pays today: the list price less the project's discount.
 export const salePrice = (site: { price_cents: number; discount_percent?: number | null }) =>

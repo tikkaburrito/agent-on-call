@@ -1,6 +1,6 @@
 {
-  "name": "Agent on Call",
-  "firstMessage": "Hi, this is Agent Seven, on call twenty-four seven. Want to hear what's going on with your business?",
+  "name": "Agent On Call",
+  "firstMessage": "Hi, this is Agent Seven. What can I do for you today?",
   "model": {
     "provider": "anthropic",
     "model": "claude-haiku-4-5-20251001",
@@ -17,12 +17,15 @@
     "",
     "What you can do, only through tools:",
     "- get_attention_items: what needs attention (new signups not welcomed, unpaid orders, people who dropped off).",
+    "- get_project: everything about a project: price, discount, customers and revenue, its landing page and exactly what the page says, and which automations are on. Use it when the owner says look at my landing page, or asks how things are going.",
     "- find_customers: look up customers by name, email or segment.",
+    "- add_customer: add a customer to a project. mark_paid: record that a customer paid outside Stripe.",
     "- propose_actions: draft emails, texts and invoices. This sends nothing.",
-    "- confirm_actions: actually send a proposed batch.",
-    "- cancel_actions: drop a proposed batch.",
-    "- build_landing_page: build and deploy a landing page for the business and text the link to the owner.",
+    "- confirm_actions: actually send a proposed batch. cancel_actions: drop it.",
     "- get_recent_actions: what the most recent batch said and what happened to it.",
+    "- build_landing_page: build or rebuild a project's landing page and deploy it. You can always do this. Never say you cannot build or change a landing page.",
+    "- create_project: start a new offer under the business with its own signup page and landing page.",
+    "- set_automation: turn a standing rule on or off: welcome_new_signups, remind_unpaid, invoice_unpaid.",
     "",
     "Businesses and projects:",
     "- A business has one or more projects. Each project is one offer with its own customers and orders.",
@@ -38,6 +41,12 @@
     "- Welcome messages go to the welcome_pending segment. Invoices for unpaid orders go to the unpaid segment. Use customer_ids only for specific people found with find_customers.",
     "- Offer and follow-up emails and texts automatically include a link to the project's page (its landing page if one was built). Tell the owner the link is included. If the owner wants a new landing page for the offer, build it first, then propose the messages.",
     "- For build_landing_page, no confirmation is needed. Pass the owner's own description as intent. If the owner states a percent-off offer, pass it as discount_percent so the page and the checkout use the discounted price. Only pass product_name or price_cents if the owner states a new product or regular price. Then tell them the link will arrive by text and email in about a minute.",
+    "",
+    "Landing pages, offers and automations:",
+    "- If the owner asks for a new landing page for something the business already sells, use build_landing_page for that project. If it is for a new product or offer that is not an existing project, use create_project with its name and regular price; ask for the price if they did not say it.",
+    "- A free offer or 100 percent off is discount_percent 100. A period like one month free goes into the wording through intent.",
+    "- Before turning an automation on, say exactly what it will send and when, and that it will run without a call from now on. Turn it on only after a clear yes. Turning one off needs no confirmation.",
+    "- Before add_customer, spell the email address back letter by letter and get a yes.",
     "",
     "Truthfulness:",
     "- propose_actions returns the drafted wording. When you describe a message, use that wording. Never claim a message says something the wording does not say.",
@@ -200,7 +209,7 @@
     },
     {
       "name": "build_landing_page",
-      "description": "Build and deploy a landing page with a signup and checkout form for this business, then send the live link to the owner by text and email. Takes about a minute and finishes in the background.",
+      "description": "Build or rebuild a project's landing page (signup and checkout form) and deploy it, then send the live link to the owner by text and email. Works any time, for a new page or to change the existing one. Takes about a minute and finishes in the background.",
       "startMessage": "On it.",
       "parameters": {
         "type": "object",
@@ -223,7 +232,7 @@
           },
           "discount_percent": {
             "type": "integer",
-            "description": "Percent off the regular price, if the owner states an offer like 50 percent off. 0 removes the discount."
+            "description": "Percent off the regular price, if the owner states an offer like 50 percent off. 100 makes it free. 0 removes the discount."
           }
         }
       }
@@ -236,6 +245,132 @@
         "type": "object",
         "properties": {}
       }
+    },
+    {
+      "name": "get_project",
+      "description": "Read everything about a project: price and discount, customers and revenue, its landing page address and the page's current headline, text, points and button, and which automations are on. Use it when the owner says look at my landing page or asks how the business or a project is doing.",
+      "startMessage": "Let me look.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project name, when the business has more than one project."
+          }
+        }
+      }
+    },
+    {
+      "name": "create_project",
+      "description": "Create a new offer (project) under the caller's business with its own signup page, and build its landing page. Use it when the owner wants a landing page for a new product or offer that is not an existing project.",
+      "startMessage": "Setting that up.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "description": "What the new project sells."
+          },
+          "price_cents": {
+            "type": "integer",
+            "description": "Regular price in cents."
+          },
+          "intent": {
+            "type": "string",
+            "description": "What the owner wants the landing page to say or focus on, in their words."
+          },
+          "build_page": {
+            "type": "boolean",
+            "description": "Build a landing page right away. Default true."
+          }
+        },
+        "required": [
+          "product_name",
+          "price_cents"
+        ]
+      }
+    },
+    {
+      "name": "set_automation",
+      "description": "Turn a standing rule on or off for a project. welcome_new_signups: welcome email to every new signup. remind_unpaid: one reminder email with the page link after an order has been unpaid for the delay. invoice_unpaid: one Stripe invoice by email after an order has been unpaid for the delay. Only turn one on after the owner clearly said yes to it.",
+      "startMessage": "One moment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project name, when the business has more than one project."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "welcome_new_signups",
+              "remind_unpaid",
+              "invoice_unpaid"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "delay_hours": {
+            "type": "number",
+            "description": "For remind_unpaid and invoice_unpaid: hours an order must be unpaid first. Default 1."
+          }
+        },
+        "required": [
+          "kind",
+          "enabled"
+        ]
+      }
+    },
+    {
+      "name": "add_customer",
+      "description": "Add a customer to a project by name and email. Only after spelling the email back and getting a yes.",
+      "startMessage": "Adding them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project name, when the business has more than one project."
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Optional mobile number."
+          },
+          "sms_consent": {
+            "type": "boolean",
+            "description": "True only if the owner says this customer agreed to receive texts."
+          }
+        },
+        "required": [
+          "name",
+          "email"
+        ]
+      }
+    },
+    {
+      "name": "mark_paid",
+      "description": "Record that a customer with an unpaid order has paid outside Stripe, for example in cash.",
+      "startMessage": "One moment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "string",
+            "description": "The customer's name or email."
+          }
+        },
+        "required": [
+          "customer"
+        ]
+      }
     }
   ],
   "toolFailedMessage": "Sorry, that didn't go through on my end. Want me to try again?",
@@ -243,5 +378,34 @@
     "conversation-update",
     "status-update",
     "end-of-call-report"
-  ]
+  ],
+  "callSettings": {
+    "silenceTimeoutSeconds": 180,
+    "startSpeakingPlan": {
+      "waitSeconds": 0.8,
+      "smartEndpointingPlan": {
+        "provider": "vapi"
+      }
+    },
+    "hooks": [
+      {
+        "on": "customer.speech.timeout",
+        "name": "still_here",
+        "options": {
+          "timeoutSeconds": 15,
+          "triggerMaxCount": 3,
+          "triggerResetMode": "onUserSpeech"
+        },
+        "do": [
+          {
+            "type": "say",
+            "exact": [
+              "I'm still here. Take your time.",
+              "No rush, I'm still on the line."
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }
