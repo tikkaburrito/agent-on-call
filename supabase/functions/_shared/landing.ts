@@ -152,7 +152,7 @@ export function renderLanding(site: Site, copy: LandingCopy, appUrl: string): st
     <form id="signup">
       <label>Name<input type="text" name="name" required maxlength="100" autocomplete="name" placeholder="Your name"></label>
       <label>Email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label>
-      <label>Mobile <span>(optional)</span><input type="tel" name="phone" autocomplete="tel" placeholder="(415) 555-0123"></label>
+      <label><div>Mobile <span>(optional)</span></div><input type="tel" name="phone" autocomplete="tel" placeholder="(415) 555-0123"></label>
       <label class="consent"><input type="checkbox" name="consent"> Text me about my booking. Message rates may apply.</label>
       <p class="error" id="error" role="alert" hidden></p>
       <button type="submit" id="submit">${esc(copy.cta)}</button>

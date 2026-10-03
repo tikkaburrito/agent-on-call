@@ -17,3 +17,21 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* Dashboard: a status badge pops when its value changes. */
+@keyframes status-pop {
+  0% { transform: scale(0.85); filter: brightness(1.8); }
+  60% { transform: scale(1.08); }
+  100% { transform: scale(1); filter: none; }
+}
+.status-pop { animation: status-pop 0.6s ease-out; }
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.row-in { animation: row-in 0.35s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pop, .row-in { animation: none; }
+}

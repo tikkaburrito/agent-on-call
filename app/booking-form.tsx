@@ -46,7 +46,9 @@ export function BookingForm({ siteId, cta }: { siteId: string; cta: string }) {
         <input name="email" type="email" required autoComplete="email" placeholder="you@example.com" className={input} />
       </label>
       <label className="flex flex-col gap-1.5 text-sm font-medium text-stone-700">
-        Mobile <span className="font-normal text-stone-500">(optional)</span>
+        <span>
+          Mobile <span className="font-normal text-stone-500">(optional)</span>
+        </span>
         <input name="phone" type="tel" autoComplete="tel" placeholder="(415) 555-0123" className={input} />
       </label>
       <label className="flex items-start gap-3 text-sm text-stone-600">
