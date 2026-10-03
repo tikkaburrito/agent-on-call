@@ -4,6 +4,8 @@
 
 - Supabase project: https://supabase.com/dashboard/project/ckwsgvgledkgkuwzbrrd (`agent-on-call`, us-east-1, fulsuccessai-spec's Org)
 - Functions base: https://ckwsgvgledkgkuwzbrrd.supabase.co/functions/v1
+- Agent phone number: +1 341 218 4552 (Vapi assistant "Agent On Call", persona Agent Seven)
+- Emails are sent from `agentseven@tikkaburrito.com`
 - Web app (Vercel, production): https://agent-on-call.vercel.app (project `agent-on-call`, team `tikka-burrito`; pushes to `main` auto-deploy)
 - Dashboard: https://agent-on-call.vercel.app/dashboard · Login: https://agent-on-call.vercel.app/login
 - GitHub (public): https://github.com/tikkaburrito/agent-on-call
@@ -13,33 +15,27 @@
 | # | Milestone | Status | Evidence |
 |---|---|---|---|
 | 0 | Scaffold, Supabase project, env skeleton | done | Next.js 16.3.8, project `ckwsgvgledkgkuwzbrrd` linked |
-| 1 | Schema, RLS, Realtime, seed, `health` | done | `scripts/m1-db.ts`: all pass; 2 businesses, 3 projects, 23 customers, 18 orders seeded |
-| 2 | Booking site, checkout, Stripe webhook | deployed; **checkout blocked on Stripe key** | https://agent-on-call.vercel.app renders the seeded site; `scripts/m2-webhook.ts` ready |
-| 3 | Executor, send helpers, allowlist | code deployed, **real-send test blocked on keys** | simulated path verified through `m4-tools.sh` (9 simulated, 0 external calls) |
-| 4 | Tools + `vapi-tools` | done | `scripts/m4-tools.sh`: 28/28 pass (incl. caller → user → business → projects), slowest call 2.5 s |
-| 5 | Vapi assistant | code done, **blocked on VAPI_API_KEY** | `vapi/assistant.json`, `vapi/setup.ts` |
-| 6 | Site builder (landing page deploy + SMS) | code deployed, **blocked on VERCEL_TOKEN** | `scripts/m6-builder.ts` ready |
-| 7 | Dashboard | deployed | signup → add business → dashboard → new project verified in browser; `scripts/m7-realtime.ts`: 10/10 pass |
-| 8 | QA, README, production deploy | README done; rest blocked on keys | |
+| 1 | Schema, RLS, Realtime, seed, `health` | done | `scripts/m1-db.ts`: all pass; 2 demo businesses, 3 projects, 23 customers seeded |
+| 2 | Signup pages, checkout, Stripe webhook | signup works; **payment off: Vercel holds a LIVE Stripe key** | checkout refuses non-test keys; `scripts/m2-webhook.ts` needs the test key locally |
+| 3 | Executor, send helpers, allowlist | email verified; **texts and invoices need 2 keys** | `scripts/m3-executor.ts`: real email sent to the allowlisted address, seeded customers simulated, idempotent; fails only on missing `TWILIO_AUTH_TOKEN` and `STRIPE_SECRET_KEY` |
+| 4 | Tools + `vapi-tools` | done | `scripts/m4-tools.sh`: 28/28 pass, slowest call under 3 s |
+| 5 | Vapi assistant | configured; **waiting for your test call** | assistant "Agent On Call" (Agent Seven) has 6 tools, each with the `x-vapi-secret` header; +1 341 218 4552 rings it |
+| 6 | Site builder (landing page deploy + SMS) | done | `scripts/m6-builder.ts`: live in 9 s at https://aoc-sunrise-yoga.vercel.app with Claude-written copy |
+| 7 | Dashboard | deployed | signup → add business → dashboard → new project verified; `scripts/m7-realtime.ts`: 10/10 pass |
+| 8 | QA, README, production deploy | deployed; live-call QA (14.4, 14.6) not run | |
 
 ## MANUAL (things only you can do)
 
-Everything below is "paste a value into `.env.local`", then run `bash scripts/go-live.sh` once.
-Nothing in Vapi, Stripe, Twilio or Resend needs to be configured by hand beyond getting the key.
+1. **Call +1 341 218 4552 from your phone ending 5585** and ask "What's going on with my business?" It should greet you by name and report the Tikka Burrito AI project.
+2. **Stripe: switch to a test key.** The `STRIPE_SECRET_KEY` you added in Vercel is a live key (it created `cs_live_` sessions). The site now refuses live keys, so checkout shows "Payments are not set up in test mode yet". In Stripe, turn on Test mode → Developers → API keys → copy the `sk_test_...` secret key, then:
+   - replace `STRIPE_SECRET_KEY` in Vercel (Project → Settings → Environment Variables), and
+   - paste the same `sk_test_...` into `.env.local`.
+3. **Twilio auth token:** paste `TWILIO_AUTH_TOKEN=...` into `.env.local` (Vercel hides it, so it could not be copied). Needed for texts.
+4. Then run `bash scripts/go-live.sh`. It pushes both to Supabase, creates the Stripe webhook, redeploys and reruns the checks.
 
-| Line in `.env.local` | Where to get it | What it turns on |
-|---|---|---|
-| `STRIPE_SECRET_KEY=sk_test_...` | dashboard.stripe.com → switch to **Test mode** → Developers → API keys → Secret key | Checkout on every signup page, invoices from the agent |
-| `VAPI_API_KEY=...` | dashboard.vapi.ai → your org → API Keys → **Private** key | The voice agent: `go-live.sh` creates the 6 tools and the assistant and attaches your number |
-| (in Vapi) one phone number | dashboard.vapi.ai → Phone Numbers → Create (a free Vapi number is fine) | The number you call |
-| `ANTHROPIC_API_KEY=sk-ant-...` | console.anthropic.com → API keys | Drafted email/text copy and landing page copy (templates are used without it) |
-| `RESEND_API_KEY=re_...` and `RESEND_FROM=Agent on Call <agent@tikkaburrito.com>` | resend.com → API Keys (`tikkaburrito.com` is already verified there) | Real emails |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM=+1...` | console.twilio.com → Account info; Phone Numbers → your number | Real texts |
-| `VERCEL_TOKEN=...` | vercel.com/account/tokens → Create | The agent's landing-page builder (`VERCEL_TEAM_ID` is already filled in) |
-| `SEND_ALLOWLIST=you@example.com,+1XXXXXXXXXX` | your own email and mobile, comma-separated | Who may receive real sends; everyone else is "simulated" |
-| `NEXT_PUBLIC_AGENT_PHONE=+1...` (optional) | the Vapi number | Shows "Call ..." on the home page |
+About Vapi and Supabase: Vapi's own "Supabase" integration is for storing call recordings, and the Resend ↔ Supabase integration only covers Supabase's login emails. Neither gives the agent database access. The agent reads data only by calling our `vapi-tools` function with the `x-vapi-secret` header, which `vapi/setup.ts` sets on every tool.
 
-About Vapi and Supabase: Vapi's own "Supabase" integration is for storing call recordings. It does not let the assistant read the database. The assistant reads data only by calling our `vapi-tools` function with the `x-vapi-secret` header, which `vapi/setup.ts` configures. Tools created by hand in the Vapi dashboard without that header get `401` and see nothing.
+Keys live in two places: Vercel (the website) and Supabase function secrets (the agent, sender and page builder). `.env.local` is the source for both; `scripts/push-secrets.sh` and `scripts/deploy-vercel.sh` copy from it.
 
 ## Notes
 

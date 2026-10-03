@@ -165,7 +165,7 @@ async function runBatch(batchId: string) {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("ok", { status: 200 }); // warm ping
-  if (!isInternalCall(req)) return new Response("unauthorized", { status: 401 });
+  if (!(await isInternalCall(req))) return new Response("unauthorized", { status: 401 });
 
   const { batch_id } = await req.json().catch(() => ({}));
   if (typeof batch_id !== "string") return Response.json({ error: "batch_id required" }, { status: 400 });

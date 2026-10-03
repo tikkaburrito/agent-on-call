@@ -21,9 +21,10 @@ export type Site = {
   product_name: string;
   price_cents: number;
   landing_url: string | null;
+  subhead?: string | null;
 };
 
-export const SITE_COLUMNS = "id, business_id, name, slug, product_name, price_cents, landing_url";
+export const SITE_COLUMNS = "id, business_id, name, slug, product_name, price_cents, landing_url, subhead";
 
 export type Owner = { id: string; username: string; full_name: string | null; phone: string | null };
 
@@ -106,10 +107,21 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-// Internal function-to-function calls carry the service key.
-export function isInternalCall(req: Request): boolean {
-  const auth = req.headers.get("authorization") ?? "";
-  return timingSafeEqual(auth, `Bearer ${SERVICE_KEY}`);
+// Internal calls carry a service-role key. Function-to-function calls send the
+// runtime's own key. A caller outside the runtime (the test scripts) may hold a
+// different string for the same role, so that one has to prove itself by
+// reading a table only the service role can read.
+export async function isInternalCall(req: Request): Promise<boolean> {
+  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+  if (timingSafeEqual(token, SERVICE_KEY)) return true;
+  try {
+    const probe = createClient(Deno.env.get("SUPABASE_URL")!, token, { auth: { persistSession: false } });
+    const { error } = await probe.from("stripe_events").select("id").limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
 }
 
 export const dollars = (cents: number) =>

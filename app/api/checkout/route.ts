@@ -64,9 +64,16 @@ export async function POST(request: Request) {
     .single();
   if (orderError) return json({ error: "Could not create your order." }, 500);
 
+  // Test mode only: this demo must never take a real card payment. The signup
+  // and pending order above still exist, so the agent can follow up.
+  const stripeKey = process.env.STRIPE_SECRET_KEY ?? "";
+  if (!/^(sk|rk)_test_/.test(stripeKey)) {
+    return json({ error: "Payments are not set up in test mode yet. We saved your details." }, 502);
+  }
+
   const appUrl = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
   try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+    const stripe = new Stripe(stripeKey);
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email,

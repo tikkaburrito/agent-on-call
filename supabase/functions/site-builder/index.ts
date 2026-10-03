@@ -69,7 +69,7 @@ async function build(buildId: string, intent: string) {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("ok", { status: 200 }); // warm ping
-  if (!isInternalCall(req)) return new Response("unauthorized", { status: 401 });
+  if (!(await isInternalCall(req))) return new Response("unauthorized", { status: 401 });
 
   const { build_id, intent } = await req.json().catch(() => ({}));
   if (typeof build_id !== "string") return Response.json({ error: "build_id required" }, { status: 400 });
