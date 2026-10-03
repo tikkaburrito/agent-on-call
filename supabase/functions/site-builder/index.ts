@@ -4,16 +4,20 @@
 import { isAllowed } from "../_shared/allowlist.ts";
 import { db, isInternalCall, keepAlive, type Site, SITE_COLUMNS } from "../_shared/db.ts";
 import { draftLanding, renderLanding } from "../_shared/landing.ts";
-import { sendSms } from "../_shared/send.ts";
+import { sendEmail, sendSms, smsRejection } from "../_shared/send.ts";
 import { deployStatic } from "../_shared/vercel.ts";
 
-// Texts the link to the business owner's phone (from their profile).
+// Sends the link to the business owner: a text to the phone on their profile,
+// and an email when they signed up with a real address. Both respect the allowlist.
 async function notifyOwner(site: Site, url: string) {
   const notified: Record<string, unknown> = {};
   const { data: business } = await db.from("businesses").select("owner_id").eq("id", site.business_id).maybeSingle();
-  const { data: owner } = business?.owner_id
-    ? await db.from("profiles").select("phone").eq("id", business.owner_id).maybeSingle()
-    : { data: null };
+  if (!business?.owner_id) return { skipped: "business has no owner" };
+  const [{ data: owner }, { data: auth }] = await Promise.all([
+    db.from("profiles").select("phone").eq("id", business.owner_id).maybeSingle(),
+    db.auth.admin.getUserById(business.owner_id),
+  ]);
+
   const phone: string | null = owner?.phone ?? null;
   if (!phone) {
     notified.sms = "skipped: the owner has no phone on their profile";
@@ -21,9 +25,27 @@ async function notifyOwner(site: Site, url: string) {
     notified.sms = "simulated: owner phone not on allowlist";
   } else {
     try {
-      notified.sms_sid = (await sendSms({ to: phone, body: `${site.name}: your landing page is live. ${url}` })).sid;
+      const sent = await sendSms({ to: phone, body: `${site.name}: your landing page is live. ${url}` });
+      notified.sms_sid = sent.sid;
+      const rejected = await smsRejection(sent.sid);
+      if (rejected) notified.sms_error = rejected;
     } catch (e) {
       notified.sms_error = (e as Error).message;
+    }
+  }
+
+  // Usernames map to synthetic addresses that receive no mail; skip those.
+  const email = auth?.user?.email ?? "";
+  if (email && !email.endsWith("@users.agent-on-call.example.com") && isAllowed(email)) {
+    try {
+      const sent = await sendEmail({
+        to: email,
+        subject: `Your ${site.name} landing page is live`,
+        text: `Your landing page for the ${site.product_name} is deployed and ready to share:\n\n${url}\n\nSignups from it show up the next time you call.`,
+      });
+      notified.email_id = sent.id;
+    } catch (e) {
+      notified.email_error = (e as Error).message;
     }
   }
   return notified;

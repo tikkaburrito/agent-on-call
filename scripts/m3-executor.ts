@@ -69,7 +69,17 @@ async function main() {
 
   check("allowlisted email executed", mine("email")?.status === "executed", JSON.stringify(mine("email")?.result?.error ?? ""));
   check("allowlisted invoice executed", mine("invoice")?.status === "executed", JSON.stringify(mine("invoice")?.result?.error ?? ""));
-  if (phone) check("allowlisted text executed", mine("sms")?.status === "executed", JSON.stringify(mine("sms")?.result?.error ?? ""));
+  if (phone) {
+    // Twilio may accept a text that the carrier then rejects (for example an
+    // unregistered sending number). That must show up as failed, with the reason.
+    const sms = mine("sms");
+    const carrierRejected = sms?.status === "failed" && /not delivered/.test(String(sms.result?.error ?? ""));
+    check(
+      "allowlisted text delivered, or reported failed with the carrier's reason",
+      sms?.status === "executed" || carrierRejected,
+      sms?.status === "executed" ? "delivered or in flight" : String(sms?.result?.error ?? ""),
+    );
+  }
   check("seeded recipient: all 3 actions simulated", seeded.length === 3 && seeded.every((a) => a.status === "simulated"));
   check(
     "simulated rows keep the would-be payload and made no external call",

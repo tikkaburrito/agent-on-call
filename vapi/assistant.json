@@ -35,7 +35,7 @@
     "- If the owner says no, wait, stop, or changes the request, call cancel_actions with the batch_id before doing anything else.",
     "- After confirm_actions, report the sent, simulated and failed counts plainly. Simulated means demo recipients, nothing was actually sent to them.",
     "- Welcome messages go to the welcome_pending segment. Invoices for unpaid orders go to the unpaid segment. Use customer_ids only for specific people found with find_customers.",
-    "- For build_landing_page, no confirmation is needed. Pass the owner's own description as intent. Only pass product_name or price_cents if the owner states a new product or price. Then tell them the link will arrive by text in about a minute.",
+    "- For build_landing_page, no confirmation is needed. Pass the owner's own description as intent. Only pass product_name or price_cents if the owner states a new product or price. Then tell them the link will arrive by text and email in about a minute.",
     "",
     "Truthfulness:",
     "- Never invent customers, amounts, links or results. State only what tools return.",
@@ -192,7 +192,7 @@
     },
     {
       "name": "build_landing_page",
-      "description": "Build and deploy a landing page with a signup and checkout form for this business, then text the live link to the owner. Takes about a minute and finishes in the background.",
+      "description": "Build and deploy a landing page with a signup and checkout form for this business, then send the live link to the owner by text and email. Takes about a minute and finishes in the background.",
       "startMessage": "On it.",
       "parameters": {
         "type": "object",

@@ -2,7 +2,7 @@
 import { isAllowed } from "../_shared/allowlist.ts";
 import { invoiceSms } from "../_shared/copy.ts";
 import { type ActionRow, type Customer, db, isInternalCall, type Site, SITE_COLUMNS } from "../_shared/db.ts";
-import { sendEmail, sendSms } from "../_shared/send.ts";
+import { sendEmail, sendSms, smsRejection } from "../_shared/send.ts";
 import { createInvoice } from "../_shared/stripe.ts";
 
 type Outcome = { status: "executed" | "simulated" | "failed"; result: Record<string, unknown> };
@@ -37,6 +37,8 @@ async function runSms(action: ActionRow, customer: Customer): Promise<Outcome> {
     return { status: "simulated", result: { reason: "recipient not on allowlist", would_send: { channel: "sms", ...message } } };
   }
   const sent = await sendSms(message);
+  const rejected = await smsRejection(sent.sid);
+  if (rejected) return { status: "failed", result: { channel: "sms", to: customer.phone, sms_sid: sent.sid, error: rejected } };
   return { status: "executed", result: { channel: "sms", to: customer.phone, sms_sid: sent.sid } };
 }
 
@@ -103,6 +105,8 @@ async function runInvoice(action: ActionRow, customer: Customer, site: Site): Pr
     try {
       const sms = await sendSms({ to: customer.phone, body: invoiceSms(site, amount, invoice.hosted_invoice_url) });
       result.sms_sid = sms.sid;
+      const rejected = await smsRejection(sms.sid);
+      if (rejected) result.sms_error = rejected; // the email already carries the link
     } catch (e) {
       result.sms_error = (e as Error).message; // the email already carries the link
     }

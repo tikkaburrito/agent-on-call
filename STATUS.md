@@ -16,26 +16,21 @@
 |---|---|---|---|
 | 0 | Scaffold, Supabase project, env skeleton | done | Next.js 16.3.8, project `ckwsgvgledkgkuwzbrrd` linked |
 | 1 | Schema, RLS, Realtime, seed, `health` | done | `scripts/m1-db.ts`: all pass; 2 demo businesses, 3 projects, 23 customers seeded |
-| 2 | Signup pages, checkout, Stripe webhook | signup works; **payment off: Vercel holds a LIVE Stripe key** | checkout refuses non-test keys; `scripts/m2-webhook.ts` needs the test key locally |
-| 3 | Executor, send helpers, allowlist | email verified; **texts and invoices need 2 keys** | `scripts/m3-executor.ts`: real email sent to the allowlisted address, seeded customers simulated, idempotent; fails only on missing `TWILIO_AUTH_TOKEN` and `STRIPE_SECRET_KEY` |
+| 2 | Signup pages, checkout, Stripe webhook | done | production checkout returns a `cs_test_` Stripe session; `scripts/m2-webhook.ts`: 8/8 pass; a real `invoice.paid` event flipped an order to paid in ~2 s (`scripts/qa-live.ts`) |
+| 3 | Executor, send helpers, allowlist | done, **texts blocked by carrier** | `scripts/m3-executor.ts`: 12/12 pass; real email and Stripe test invoice delivered to the allowlisted address; seeded customers simulated; idempotent |
 | 4 | Tools + `vapi-tools` | done | `scripts/m4-tools.sh`: 28/28 pass, slowest call under 3 s |
 | 5 | Vapi assistant | configured; **waiting for your test call** | assistant "Agent On Call" (Agent Seven) has 6 tools, each with the `x-vapi-secret` header; +1 341 218 4552 rings it |
-| 6 | Site builder (landing page deploy + SMS) | done | `scripts/m6-builder.ts`: live in 9 s at https://aoc-sunrise-yoga.vercel.app with Claude-written copy |
+| 6 | Site builder (landing page deploy) | done | `scripts/m6-builder.ts`: 8/8 pass; live in 9 s at https://aoc-sunrise-yoga.vercel.app with Claude-written copy; checkout from the page works |
 | 7 | Dashboard | deployed | signup → add business → dashboard → new project verified; `scripts/m7-realtime.ts`: 10/10 pass |
-| 8 | QA, README, production deploy | deployed; live-call QA (14.4, 14.6) not run | |
+| 8 | QA, README, production deploy | deployed; live-call QA (14.4, 14.6) is yours to run | see QA below |
 
 ## MANUAL (things only you can do)
 
-1. **Call +1 341 218 4552 from your phone ending 5585** and ask "What's going on with my business?" It should greet you by name and report the Tikka Burrito AI project.
-2. **Stripe: switch to a test key.** The `STRIPE_SECRET_KEY` you added in Vercel is a live key (it created `cs_live_` sessions). The site now refuses live keys, so checkout shows "Payments are not set up in test mode yet". In Stripe, turn on Test mode → Developers → API keys → copy the `sk_test_...` secret key, then:
-   - replace `STRIPE_SECRET_KEY` in Vercel (Project → Settings → Environment Variables), and
-   - paste the same `sk_test_...` into `.env.local`.
-3. **Twilio auth token:** paste `TWILIO_AUTH_TOKEN=...` into `.env.local` (Vercel hides it, so it could not be copied). Needed for texts.
-4. Then run `bash scripts/go-live.sh`. It pushes both to Supabase, creates the Stripe webhook, redeploys and reruns the checks.
+1. **Call +1 341 218 4552 from your phone ending 5585** and ask "What's going on with my business?" Then try "Welcome the new signup and send the invoice", say "yes", and check your email.
+2. **Texts do not arrive.** Twilio accepts them, but US carriers reject them with error 30034: the Twilio number +1 341 218 4552 is not registered for business texting (A2P 10DLC). Registration is done in the Twilio console (Messaging → Regulatory compliance → A2P 10DLC) and takes days, so plan the demo around email. The system reports these texts as failed with that reason, invoices still go out by email, and landing page links are also emailed to owners who signed up with a real email address.
+3. For the judge demo: add the judge's email to `SEND_ALLOWLIST` in `.env.local`, then run `bash scripts/push-secrets.sh`.
 
-About Vapi and Supabase: Vapi's own "Supabase" integration is for storing call recordings, and the Resend ↔ Supabase integration only covers Supabase's login emails. Neither gives the agent database access. The agent reads data only by calling our `vapi-tools` function with the `x-vapi-secret` header, which `vapi/setup.ts` sets on every tool.
-
-Keys live in two places: Vercel (the website) and Supabase function secrets (the agent, sender and page builder). `.env.local` is the source for both; `scripts/push-secrets.sh` and `scripts/deploy-vercel.sh` copy from it.
+Keys live in two places: Vercel (the website) and Supabase function secrets (the agent, sender and page builder). `.env.local` is the source for both; `bash scripts/go-live.sh` copies from it and reruns the checks.
 
 ## Notes
 
@@ -56,4 +51,19 @@ Keys live in two places: Vercel (the website) and Supabase function secrets (the
 
 ## QA
 
-_Filled in at M8._
+Scripted checks, last run with all keys in place:
+
+| Area (spec §14) | Result | Script |
+|---|---|---|
+| 14.1 Anonymous reads nothing; owner A cannot read owner B | pass | `scripts/m1-db.ts`, `scripts/m7-realtime.ts` |
+| 14.1 `vapi-tools` wrong or missing secret → 401 | pass | `scripts/m4-tools.sh` |
+| 14.1 `stripe-webhook` bad signature → 400, no row changes | pass | `scripts/m2-webhook.ts` |
+| 14.1 Cross-business batch cannot be confirmed; foreign customer ids dropped | pass | `scripts/m4-tools.sh` |
+| 14.1 Service role key absent from the client bundle | pass | `scripts/qa-bundle.sh` |
+| 14.2 Executor idempotent; `welcomed_at` set once; invoice stored on the right order | pass | `scripts/m3-executor.ts` |
+| 14.2 Stripe webhook replay is a no-op; one failed action leaves the rest executed | pass | `scripts/m2-webhook.ts`, `scripts/m3-executor.ts` |
+| 14.3 No consent or no phone → no SMS row; non-allowlisted → simulated, no external call | pass | `scripts/m4-tools.sh`, `scripts/m3-executor.ts` |
+| 14.4 Every tool call under 5 s; confirm returns within 5 s | pass | `scripts/m4-tools.sh` |
+| 14.4 Agent behaviour on a live call (no invention, ambiguous reply, "wait, no") | **not run** | needs your phone call |
+| 14.5 Failure drills (invalid Anthropic key, invalid Twilio token, 500, unknown caller) | partly: unknown caller and Twilio failure verified; the others **not run** | |
+| 14.6 Three rehearsals | **not run** | needs your phone call |

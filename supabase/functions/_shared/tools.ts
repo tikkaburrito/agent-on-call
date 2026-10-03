@@ -325,7 +325,7 @@ export async function build_landing_page(ctx: CallerContext, args: Args): Promis
     .eq("status", "building")
     .gt("created_at", new Date(Date.now() - 3 * 60_000).toISOString())
     .limit(1);
-  if (active?.length) return "A landing page is already being built. The link will be texted in under a minute.";
+  if (active?.length) return "A landing page is already being built. The link will arrive by text and email in under a minute.";
 
   // Optional product and price changes spoken by the owner.
   const update: Record<string, unknown> = {};
@@ -361,7 +361,7 @@ export async function build_landing_page(ctx: CallerContext, args: Args): Promis
   const product = (update.product_name as string) ?? site.product_name;
   const cents = (update.price_cents as number) ?? site.price_cents;
   return oneLine(
-    `Building a landing page for ${site.name} selling the ${product} at ${dollars(cents)}. It deploys in about a minute and the link will be texted to the owner's phone.`,
+    `Building a landing page for ${site.name} selling the ${product} at ${dollars(cents)}. It deploys in about a minute and the link will be sent to the owner by text and email.`,
   );
 }
 

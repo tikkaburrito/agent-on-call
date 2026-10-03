@@ -52,3 +52,27 @@ export async function sendSms(msg: { to: string; body: string }): Promise<{ sid:
     },
   );
 }
+
+// Twilio accepts a message before the carrier decides. A short while later the
+// status tells us whether it was rejected (for example error 30034: the sending
+// number is not registered for US A2P 10DLC). Returns null when it is fine or
+// still in flight, or a reason when the carrier refused it.
+export async function smsRejection(sid: string, waitMs = 2500): Promise<string | null> {
+  const account = Deno.env.get("TWILIO_ACCOUNT_SID");
+  const token = Deno.env.get("TWILIO_AUTH_TOKEN");
+  if (!account || !token) return null;
+  await new Promise((r) => setTimeout(r, waitMs));
+  try {
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${account}/Messages/${sid}.json`, {
+      headers: { Authorization: `Basic ${btoa(`${account}:${token}`)}` },
+    });
+    const m = await res.json();
+    if (m.status !== "undelivered" && m.status !== "failed") return null;
+    const why = m.error_code === 30034
+      ? "the sending number is not registered for US business texting (A2P 10DLC)"
+      : m.error_message || "the carrier rejected it";
+    return `text not delivered: ${why} (Twilio ${m.error_code ?? m.status})`;
+  } catch {
+    return null;
+  }
+}
