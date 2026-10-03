@@ -13,13 +13,13 @@
 | # | Milestone | Status | Evidence |
 |---|---|---|---|
 | 0 | Scaffold, Supabase project, env skeleton | done | Next.js 16.3.8, project `ckwsgvgledkgkuwzbrrd` linked |
-| 1 | Schema, RLS, Realtime, seed, `health` | done | `scripts/m1-db.ts`: 17/17 pass |
+| 1 | Schema, RLS, Realtime, seed, `health` | done | `scripts/m1-db.ts`: all pass; 2 businesses, 3 projects, 23 customers, 18 orders seeded |
 | 2 | Booking site, checkout, Stripe webhook | deployed; **checkout blocked on Stripe key** | https://agent-on-call.vercel.app renders the seeded site; `scripts/m2-webhook.ts` ready |
 | 3 | Executor, send helpers, allowlist | code deployed, **real-send test blocked on keys** | simulated path verified through `m4-tools.sh` (9 simulated, 0 external calls) |
-| 4 | Tools + `vapi-tools` | done | `scripts/m4-tools.sh`: 23/23 pass, slowest call 2.7 s |
+| 4 | Tools + `vapi-tools` | done | `scripts/m4-tools.sh`: 28/28 pass (incl. caller → user → business → projects), slowest call 2.5 s |
 | 5 | Vapi assistant | code done, **blocked on VAPI_API_KEY** | `vapi/assistant.json`, `vapi/setup.ts` |
 | 6 | Site builder (landing page deploy + SMS) | code deployed, **blocked on VERCEL_TOKEN** | `scripts/m6-builder.ts` ready |
-| 7 | Dashboard | deployed | OTP login + dashboard verified in browser; `scripts/m7-realtime.ts`: 8/8 pass |
+| 7 | Dashboard | deployed | signup → add business → dashboard → new project verified in browser; `scripts/m7-realtime.ts`: 10/10 pass |
 | 8 | QA, README, production deploy | README done; rest blocked on keys | |
 
 ## MANUAL (things only you can do)
@@ -31,17 +31,18 @@
   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` (E.164)
   - `VAPI_API_KEY` (private key)
   - `VERCEL_TOKEN` (vercel.com/account/tokens) and `VERCEL_TEAM_ID=team_BUhGvL1REv0fT0pL02shzlH7`: still needed by the site builder, which deploys landing pages from an edge function. The main app no longer needs it (CLI is logged in).
-  - `OWNER_PHONE` (E.164, the phone you will call from), `OWNER_EMAIL`
+  - `OWNER_PHONE` (E.164, the phone you will call from; makes the demo business answer to it), optional `NEXT_PUBLIC_AGENT_PHONE` (the Vapi number, shown on the home page)
   - `SEND_ALLOWLIST` (comma-separated emails and E.164 phones that may receive real sends; include your own)
-- [ ] MANUAL: after adding keys, run `bash scripts/deploy-vercel.sh` so `STRIPE_SECRET_KEY` and `OWNER_EMAIL` reach Vercel (it redeploys).
+- [ ] MANUAL: after adding keys, run `bash scripts/deploy-vercel.sh` so `STRIPE_SECRET_KEY` reaches Vercel (it redeploys).
 - [ ] MANUAL: make sure a phone number exists in your Vapi account. `npx tsx vapi/setup.ts --attach` attaches it if there is exactly one.
 - [ ] MANUAL: confirm your Twilio number can text US mobiles (trial accounts only reach verified numbers).
 
 ## Notes
 
-- The Supabase project is on the free tier (template changes were refused without custom SMTP), so it is not billed.
-- Supabase's built-in mailer cannot send the 6-digit code template. `scripts/push-auth-config.sh` switches auth email to Resend SMTP once the Resend key is in place. Until then, `npx tsx scripts/dev-login-code.ts <email>` prints a sign-in code.
-- A QA user (`qa-dashboard@example.com`) currently owns the seeded site for dashboard testing. The real owner takes over on first login as `OWNER_EMAIL`.
+- The Supabase project is on the free tier, so it is not billed.
+- Login is username + password. Demo users: `sunrise` (Sunrise Yoga Studio, 2 projects) and `harbor` (Harbor Coffee Roasters). Their password is `DEMO_PASSWORD` in `.env.local`.
+- The demo owner's caller ID is `OWNER_PHONE` if set (re-run `bash scripts/seed.sh` after setting it), otherwise a placeholder. Or sign up with your own number and business.
+- Google login is not built: it needs OAuth client credentials from Google Cloud added to Supabase Auth.
 
 ## Divergences from the spec (agreed)
 
@@ -49,6 +50,9 @@
 - Extra segment `welcome_pending` (not yet welcomed) alongside `all | new_today | unpaid | dropped_off`.
 - `needs_attention` takes `p_minutes` (from `ATTENTION_MINUTES`) because SQL cannot read edge function env.
 - No milestone stop-and-wait; progress is logged here instead.
+- Users → businesses → projects: `profiles` and `businesses` tables added; `sites` rows are the projects under a business. The caller is recognised by `profiles.phone`, not a phone on the site.
+- Login is username + password instead of email OTP; the `OWNER_EMAIL` claim step is gone. New users sign up and add their own business.
+- `/` is now the product home page with the live demo business; each project's signup page is at `/s/<slug>`.
 
 ## QA
 

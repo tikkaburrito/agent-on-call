@@ -4,11 +4,13 @@
 
 A small-business owner calls a phone number and talks to an AI agent that:
 
-1. Identifies the owner's business from caller ID.
-2. Reads that business's database and says what needs attention: new signups, unpaid orders, people who dropped off.
+1. Recognises the caller from their phone number: which user they are, which business is theirs, and which projects sit under it.
+2. Reads that business's database and walks them through what needs attention, project by project: new signups, unpaid orders, people who dropped off.
 3. Proposes actions (emails, texts, Stripe invoices), drafts the copy, and reads the plan back.
 4. On a spoken "yes", executes them for real and reports the results.
 5. On request, builds a landing page, deploys it to Vercel as its own project, and texts the owner the link.
+
+**Live:** https://agent-on-call.vercel.app (home page with the demo business) · **Dashboard:** https://agent-on-call.vercel.app/dashboard
 
 Built in one day for a hackathon. Everything runs for real: real auth, real rows, real sends, real deployments.
 
@@ -18,7 +20,7 @@ Built in one day for a hackathon. Everything runs for real: real auth, real rows
 Phone ─▶ Vapi assistant (Claude Haiku 4.5)
             │  tool calls, x-vapi-secret header
             ▼
-   vapi-tools (Supabase Edge Function) ── resolves the site from caller ID
+   vapi-tools (Supabase Edge Function) ── caller ID ─▶ user ─▶ business ─▶ projects
             │
             ├─ _shared/tools.ts ──▶ Postgres: needs_attention(), find_customers(), actions
             ├─ executor ──────────▶ Resend (email) · Twilio (SMS) · Stripe (invoices)
@@ -28,16 +30,29 @@ Landing page (static, own Vercel project) ─▶ POST /api/checkout (Next.js on 
             └─▶ customers + pending order ─▶ Stripe Checkout
 Stripe ─▶ stripe-webhook (Edge Function) ─▶ order paid (idempotent via stripe_events)
 
-Owner dashboard (Next.js) ◀─ Supabase Auth (email code) + RLS + Realtime
+Owner dashboard (Next.js) ◀─ Supabase Auth (username + password) + RLS + Realtime
 ```
+
+### Data model: user → business → projects
+
+| Table | What it is |
+|---|---|
+| `profiles` | One row per user: username, name, and the phone they call from (caller ID) |
+| `businesses` | Owned by a user. One per user today; the schema allows more |
+| `sites` | The **projects** under a business: one offer, one price, one signup page |
+| `customers`, `orders` | People who signed up on a project's page, and what they owe or paid |
+| `actions` | Every email, text and invoice the agent proposed, with its status and result |
+| `site_builds` | Landing pages the agent built and deployed for a project |
+
+A user signs up with a username, a password and their mobile number, then adds their business and first project. When they call, `vapi-tools` looks up `profiles.phone`, loads their business and its projects, and every tool is limited to those project ids. With several projects, the agent reports on all of them and asks which one before it acts.
 
 ### How Supabase is used
 
 | Feature | Use |
 |---|---|
-| Postgres | `sites`, `customers`, `orders`, `actions`, `site_builds`, `stripe_events`; site-scoped SQL functions `needs_attention` and `find_customers` are the only way the agent reads data |
-| RLS | Every table has RLS. Owners can only `select` rows of sites they own. There are no public policies; writes go through the service key on the server |
-| Auth | Email one-time code for the owner dashboard |
+| Postgres | `profiles`, `businesses`, `sites` (projects), `customers`, `orders`, `actions`, `site_builds`, `stripe_events`; project-scoped SQL functions `needs_attention` and `find_customers` are the only way the agent reads data |
+| RLS | Every table has RLS. A user can only `select` their own profile, their business, and rows of projects under it. There are no public policies; writes go through the service key on the server |
+| Auth | Username and password for the owner dashboard (usernames map to synthetic addresses, so no email is ever sent) |
 | Realtime | The dashboard subscribes to `actions`, `customers`, `orders`, `site_builds`; RLS applies to the stream |
 | Edge Functions | `vapi-tools`, `executor`, `site-builder`, `stripe-webhook`, `health` |
 | pg_cron + pg_net | Pings the functions every minute so tool calls stay fast during a call |
@@ -46,7 +61,7 @@ Owner dashboard (Next.js) ◀─ Supabase Auth (email code) + RLS + Realtime
 
 - **Nothing is sent without a spoken yes.** `propose_actions` only writes `proposed` rows. `confirm_actions` runs them, and the assistant is instructed to call it only after a clear yes.
 - **Send allowlist.** Real email, SMS and Stripe calls go only to addresses in `SEND_ALLOWLIST`. Everyone else ends as `simulated`, with the would-be payload stored and no external call made. Seed data is fake (`@example.com`, 555 numbers).
-- **Tenant isolation.** Every tool is scoped to the caller's `site_id`. Customer ids or batch ids from another site never match.
+- **Tenant isolation.** Every tool is limited to the caller's own project ids. Customer ids or batch ids from another business never match.
 - **SMS consent.** No text is proposed for a customer without consent or a phone number, and the executor checks again.
 - **Idempotency.** The executor claims rows with one atomic `update ... where status = 'approved'`; a second run claims nothing. Stripe events are recorded by id before processing, so replays are no-ops.
 - **Stripe test mode only.** The Stripe helper refuses any key that is not `sk_test_`.
@@ -56,7 +71,7 @@ Owner dashboard (Next.js) ◀─ Supabase Auth (email code) + RLS + Realtime
 
 | Tool | What it does |
 |---|---|
-| `get_attention_items` | Counts and up to 5 names per kind: not welcomed, unpaid, dropped off |
+| `get_attention_items` | The caller's name and business, then per project: counts and up to 5 names for not welcomed, unpaid, dropped off |
 | `find_customers` | Lookup by name/email and segment (`all`, `new_today`, `welcome_pending`, `unpaid`, `dropped_off`) |
 | `propose_actions` | Resolves recipients, drafts copy with Claude (templates as fallback), inserts `proposed` actions under one `batch_id`, returns a spoken summary |
 | `confirm_actions` | Approves the batch, runs the executor, waits up to ~3.5 s, reports sent / simulated / failed / still running |
@@ -66,7 +81,8 @@ Owner dashboard (Next.js) ◀─ Supabase Auth (email code) + RLS + Realtime
 ## Repo layout
 
 ```
-app/                      Next.js: booking site (/), /success, /login, /dashboard, /api/checkout, /api/claim
+app/                      Next.js: home (/), project signup pages (/s/[slug]), /success, /login, /dashboard,
+                          /api/checkout, /api/signup, /api/onboard, /api/projects
 lib/                      Supabase clients, types
 supabase/migrations/      schema, RLS, realtime, SQL functions, warm pinger
 supabase/seed.sql         fake demo data
@@ -91,19 +107,18 @@ supabase link --project-ref <ref>
 supabase db push --include-seed
 bash scripts/push-secrets.sh
 supabase functions deploy vapi-tools executor site-builder stripe-webhook health --no-verify-jwt
-npx tsx scripts/set-owner.ts      # seeded site answers to OWNER_PHONE
+bash scripts/seed.sh              # sample data + demo users "sunrise" and "harbor" (password: DEMO_PASSWORD in .env.local)
 ```
 
 ```bash
-# Stripe webhook (test mode) and auth email (Resend SMTP + code template)
+# Stripe webhook (test mode)
 npx tsx scripts/setup-stripe-webhook.ts && bash scripts/push-secrets.sh
-bash scripts/push-auth-config.sh
 ```
 
 ```bash
 # Web app
 npm run dev                       # local
-vercel deploy --prod              # production; set the same env vars in Vercel
+bash scripts/deploy-vercel.sh     # production; copies the env vars the app needs
 ```
 
 ```bash
@@ -111,7 +126,7 @@ vercel deploy --prod              # production; set the same env vars in Vercel
 npx tsx vapi/setup.ts --attach    # creates/updates tools + assistant, attaches the phone number
 ```
 
-Then call the Vapi number from `OWNER_PHONE` and say "What needs my attention?"
+Then create an account at `/login` with the mobile you will call from, add your business, call the Vapi number and say "What's going on?" To call as the demo owner instead, set `OWNER_PHONE` and re-run `bash scripts/seed.sh`.
 
 ### Tests
 
@@ -119,7 +134,7 @@ Then call the Vapi number from `OWNER_PHONE` and say "What needs my attention?"
 npx tsx scripts/m1-db.ts          # schema, RLS, owner scoping
 npx tsx scripts/m2-webhook.ts     # Stripe signature, paid flip, replay
 npx tsx scripts/m3-executor.ts    # real sends to the allowlist, simulated for seed data, idempotency
-bash scripts/m4-tools.sh          # every tool over HTTP, auth, isolation, timing
+bash scripts/m4-tools.sh          # every tool over HTTP: caller recognition, projects, auth, isolation, timing
 npx tsx scripts/m6-builder.ts     # landing page build, public URL, checkout from the page
 npx tsx scripts/m7-realtime.ts    # realtime to the owner, nothing to a second user
 bash scripts/qa-bundle.sh         # no server secrets in the client bundle
@@ -130,12 +145,12 @@ npx tsx scripts/reset-demo.ts     # back to the seeded state before a rehearsal
 
 - The warm pinger (`warm-functions` cron job) is on by default. Check with `select * from cron.job;`. Turn off with `select cron.unschedule('warm-functions');`.
 - Add the judge's email and phone to `SEND_ALLOWLIST`, then `bash scripts/push-secrets.sh`.
-- Open `/dashboard` on the big screen, signed in as `OWNER_EMAIL`.
-- If the sign-in email is slow: `npx tsx scripts/dev-login-code.ts <owner email>` prints a one-time code.
+- Open `/dashboard` on the big screen, signed in as `sunrise` (password: `DEMO_PASSWORD` in `.env.local`) or as your own account.
 
 ## Next steps (out of scope today)
 
-- Self-serve onboarding for new businesses, including by phone.
+- Google sign-in, and verifying the caller's phone with a text code at signup (today the number is taken on trust).
+- Several businesses per user (the schema already allows it), and onboarding by phone.
 - Stripe Connect so each business is paid into its own account.
 - Standing rules ("always welcome new signups within five minutes").
 - Outbound calls from the agent to the owner.
