@@ -37,7 +37,8 @@ Keys live in two places: Vercel (the website) and Supabase function secrets (the
 
 - **Offers were dropped from drafted copy.** The drafter was told never to mention discounts, so "50 percent off" was left out, and the agent then said it was included. Now the owner's stated offer must appear in the copy (enforced in code, not only in the prompt), `propose_actions` returns the drafted wording, and `get_recent_actions` lets the agent read back what was actually sent.
 - **A percent-off offer on a landing page is real.** `build_landing_page` stores it as the project's `discount_percent`; the page, the signup page and Stripe Checkout all use the discounted price. Say "remove the discount" (or pass 0) to clear it.
-- **Call log.** Calls made before this change were imported from Vapi; new ones are logged live.
+- **Offer emails link to the page.** Offer and follow-up emails and texts now include the project's page link (the landing page the agent built, otherwise the hosted signup page). When the owner approves a percent-off message, that discount is applied to the project and its landing page is rebuilt, so the link always shows the price the email promised.
+- **Call log.** Calls made before this change were imported from Vapi; new ones are logged live, with transcript lines synced from the conversation on every turn.
 
 ## Notes
 

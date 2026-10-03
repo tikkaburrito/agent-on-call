@@ -23,8 +23,10 @@ async function main() {
   let imported = 0;
 
   for (const c of calls) {
-    const { count } = await db.from("call_events").select("*", { count: "exact", head: true }).eq("call_id", c.id);
-    if (count) continue; // already logged live or imported
+    const { data: existing } = await db.from("call_events").select("kind").eq("call_id", c.id);
+    const hasTranscript = (existing ?? []).some((e) => e.kind === "transcript");
+    const hasTools = (existing ?? []).some((e) => e.kind === "tool_call");
+    if (hasTranscript) continue; // already complete
     const messages: VapiMessage[] = c.artifact?.messages ?? c.messages ?? [];
     if (messages.filter((m) => m.role !== "system").length === 0) continue;
 
@@ -48,9 +50,11 @@ async function main() {
     const base = Date.parse(c.startedAt ?? c.createdAt);
     const rows: Record<string, unknown>[] = [];
     const batchIds: string[] = [];
+    let seq = 0;
     messages.forEach((m, i) => {
       const at = new Date(m.time ?? base + i * 1000).toISOString();
       if (m.role === "system") return;
+      if ((m.toolCalls?.length || m.role === "tool_call_result") && hasTools) return; // logged live already
       if (m.toolCalls?.length) {
         for (const t of m.toolCalls) {
           let args: unknown = t.function?.arguments;
@@ -63,7 +67,7 @@ async function main() {
         const batch = text.match(/batch_id: ([0-9a-f-]{36})/)?.[1];
         if (batch) batchIds.push(batch);
       } else if (m.message) {
-        rows.push({ call_id: c.id, at, kind: "transcript", role: m.role === "user" ? "user" : "assistant", text: m.message });
+        rows.push({ call_id: c.id, at, seq: seq++, kind: "transcript", role: m.role === "user" ? "user" : "assistant", text: m.message });
       }
     });
     if (rows.length) {

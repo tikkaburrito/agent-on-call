@@ -1,6 +1,6 @@
 // Agent tools. Each returns one spoken line. The agent touches data only
 // through these, always inside the caller's own business (CallerContext).
-import { type DraftRequest, draftCopy, personalize } from "./copy.ts";
+import { type DraftRequest, draftCopy, personalize, withLink } from "./copy.ts";
 import {
   ATTENTION_MINUTES,
   type CallerContext,
@@ -133,6 +133,7 @@ type Item = {
   intent: string;
   amount_cents?: number;
   description?: string;
+  include_link?: boolean;
 };
 
 function parseItems(raw: unknown): Item[] {
@@ -153,6 +154,7 @@ function parseItems(raw: unknown): Item[] {
       intent: typeof o.intent === "string" ? o.intent : "",
       amount_cents: Number.isInteger(amount) && amount >= 50 && amount <= 1_000_000 ? amount : undefined,
       description: typeof o.description === "string" ? o.description.slice(0, 120) : undefined,
+      include_link: o.include_link === false ? false : undefined,
     });
   }
   return items;
@@ -208,9 +210,16 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
   }));
   const { drafts, source } = await draftCopy(site, requests);
 
+  // Offers and follow-ups link to the project's page: the landing page the
+  // agent built if there is one, otherwise the hosted signup page.
+  const appUrl = (Deno.env.get("NEXT_PUBLIC_SITE_URL") ?? "").replace(/\/$/, "");
+  const pageUrl = site.landing_url || (appUrl ? `${appUrl}/s/${site.slug}` : "");
+  const linked = (i: number) => items[i].type !== "invoice" && !requests[i].welcome && items[i].include_link !== false && !!pageUrl;
+
   const batchId = crypto.randomUUID();
   const rows = planned.map(({ item, itemIndex, customer, amount }) => {
-    const copy = personalize(site, requests[itemIndex], drafts[itemIndex], customer.name);
+    const personal = personalize(site, requests[itemIndex], drafts[itemIndex], customer.name);
+    const copy = linked(itemIndex) ? withLink(item.type, personal, pageUrl) : personal;
     return {
       site_id: siteId,
       batch_id: batchId,
@@ -224,6 +233,8 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
         intent: item.intent.slice(0, 300),
         welcome: requests[itemIndex].welcome,
         copy_source: source,
+        ...(linked(itemIndex) ? { link: pageUrl } : {}),
+        ...(statedDiscount(item.intent) ? { offer_percent: statedDiscount(item.intent) } : {}),
         ...(item.type === "invoice"
           ? { amount_cents: amount, description: item.description ?? site.product_name }
           : {}),
@@ -255,8 +266,11 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     })
     .filter(Boolean)
     .join(" ");
+  const linkNote = items.some((_, i) => linked(i) && rows.some((_, j) => planned[j].itemIndex === i))
+    ? ` Each one includes the link to the project's page, ${pageUrl.replace("https://", "")}.`
+    : "";
   return oneLine(
-    `Proposed${where}: ${parts.join(", ")}.${skipNote} ${previews} Nothing is sent yet. Tell the owner the counts and the gist of the wording, then ask "Should I go ahead?" batch_id: ${batchId}`,
+    `Proposed${where}: ${parts.join(", ")}.${skipNote} ${previews}${linkNote} Nothing is sent yet. Tell the owner the counts and the gist of the wording, then ask "Should I go ahead?" batch_id: ${batchId}`,
   );
 }
 
@@ -290,9 +304,22 @@ export async function confirm_actions(ctx: CallerContext, args: Args): Promise<s
     .eq("batch_id", batchId)
     .in("site_id", siteIds)
     .eq("status", "proposed")
-    .select("id");
+    .select("id, site_id, payload");
   if (error) throw new Error(error.message);
   if (!approved || approved.length === 0) return none;
+
+  // A percent-off offer the owner just approved must be true where the link
+  // lands: set it as the project's discount and refresh its landing page.
+  let offerNote = "";
+  for (const site of ctx.sites) {
+    const percent = approved.find((a) => a.site_id === site.id && (a.payload as { offer_percent?: number })?.offer_percent)
+      ?.payload?.offer_percent as number | undefined;
+    if (!percent || percent === (site.discount_percent ?? 0)) continue;
+    await db.from("sites").update({ discount_percent: percent }).eq("id", site.id);
+    site.discount_percent = percent;
+    offerNote = ` The ${site.product_name} page and checkout now show ${percent} percent off.`;
+    if (site.landing_url) keepAlive(startBuild(site, ctx.callId, `${percent}% off offer`));
+  }
 
   // The executor keeps running after we answer; we wait at most ~3.5 s.
   const run = fetch(`${FUNCTIONS_URL}/executor`, {
@@ -309,7 +336,7 @@ export async function confirm_actions(ctx: CallerContext, args: Args): Promise<s
   const parts = [`${n("executed")} sent`, `${n("simulated")} simulated`, `${n("failed")} failed`];
   if (running) parts.push(`${running} still running`);
   return oneLine(
-    `Done. ${parts.join(", ")}. Simulated means the recipient is demo data, so nothing was actually sent to them.`,
+    `Done. ${parts.join(", ")}.${offerNote} Simulated means the recipient is demo data, so nothing was actually sent to them.`,
   );
 }
 
@@ -330,6 +357,22 @@ export async function cancel_actions(ctx: CallerContext, args: Args): Promise<st
 }
 
 // ---------------------------------------------------------------- build_landing_page
+
+// Records a build and hands it to site-builder, which answers 202 at once and
+// finishes the deploy in the background.
+async function startBuild(site: Site, callId: string | undefined, intent: string) {
+  const { data: build, error } = await db
+    .from("site_builds")
+    .insert({ site_id: site.id, status: "building", call_id: callId ?? null })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  await fetch(`${FUNCTIONS_URL}/site-builder`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ build_id: build.id, intent }),
+  }).then((r) => r.text());
+}
 
 export async function build_landing_page(ctx: CallerContext, args: Args): Promise<string> {
   const site = pickSite(ctx, args.project);
@@ -363,22 +406,7 @@ export async function build_landing_page(ctx: CallerContext, args: Args): Promis
     if (error) throw new Error(error.message);
   }
 
-  const { data: build, error } = await db
-    .from("site_builds")
-    .insert({ site_id: siteId, status: "building", call_id: ctx.callId ?? null })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-
-  // site-builder answers 202 at once and finishes the deploy in the background.
-  const kickoff = fetch(`${FUNCTIONS_URL}/site-builder`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      build_id: build.id,
-      intent: typeof args.intent === "string" ? args.intent.slice(0, 400) : "",
-    }),
-  }).then((r) => r.text());
+  const kickoff = startBuild(site, ctx.callId, intent.slice(0, 400));
   keepAlive(kickoff);
   await Promise.race([kickoff.catch(() => null), sleep(2500)]);
 

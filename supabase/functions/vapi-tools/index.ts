@@ -65,12 +65,30 @@ async function logEvent(callId: string | null | undefined, event: Record<string,
   if (error) console.error("call log insert failed:", error.message);
 }
 
-async function logTranscript(message: Message) {
-  if (message.transcriptType && message.transcriptType !== "final") return;
-  const text = typeof message.transcript === "string" ? message.transcript.trim() : "";
-  if (!text) return;
+// Vapi sends the whole conversation so far on every turn (and once more in
+// the end-of-call report). Each spoken line is stored at its position in the
+// call, so repeats update in place.
+async function syncTranscript(message: Message, messages: unknown) {
+  if (!Array.isArray(messages)) return;
   const callId = await upsertCall(message);
-  await logEvent(callId, { kind: "transcript", role: message.role === "user" ? "user" : "assistant", text });
+  if (!callId) return;
+  const rows: Record<string, unknown>[] = [];
+  for (const m of messages as Message[]) {
+    const spoken = m.role === "user" || m.role === "bot" || m.role === "assistant";
+    const text = typeof m.message === "string" ? m.message : typeof m.content === "string" ? m.content : "";
+    if (!spoken || !text.trim()) continue;
+    rows.push({
+      call_id: callId,
+      seq: rows.length,
+      kind: "transcript",
+      role: m.role === "user" ? "user" : "assistant",
+      text: text.trim(),
+      ...(typeof m.time === "number" ? { at: new Date(m.time).toISOString() } : {}),
+    });
+  }
+  if (rows.length === 0) return;
+  const { error } = await db.from("call_events").upsert(rows, { onConflict: "call_id,seq" });
+  if (error) console.error("transcript sync failed:", error.message);
 }
 
 async function logStatus(message: Message) {
@@ -89,6 +107,7 @@ async function logStatus(message: Message) {
 }
 
 async function logEndOfCall(message: Message) {
+  await syncTranscript(message, message.artifact?.messages);
   await upsertCall(message, {
     status: "ended",
     ended_reason: message.endedReason ?? null,
@@ -115,7 +134,7 @@ Deno.serve(async (req) => {
   if (type !== "tool-calls") {
     // Informational messages: record them after answering, so Vapi never waits.
     if (message) {
-      if (type.startsWith("transcript")) keepAlive(logTranscript(message));
+      if (type === "conversation-update") keepAlive(syncTranscript(message, message.messages ?? message.artifact?.messages ?? message.messagesOpenAIFormatted));
       else if (type === "status-update") keepAlive(logStatus(message));
       else if (type === "end-of-call-report") keepAlive(logEndOfCall(message));
       else console.log(`vapi message type=${type} ignored`);

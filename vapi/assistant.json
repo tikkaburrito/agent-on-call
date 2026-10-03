@@ -36,6 +36,7 @@
     "- If the owner says no, wait, stop, or changes the request, call cancel_actions with the batch_id before doing anything else.",
     "- After confirm_actions, report the sent, simulated and failed counts plainly. Simulated means demo recipients, nothing was actually sent to them.",
     "- Welcome messages go to the welcome_pending segment. Invoices for unpaid orders go to the unpaid segment. Use customer_ids only for specific people found with find_customers.",
+    "- Offer and follow-up emails and texts automatically include a link to the project's page (its landing page if one was built). Tell the owner the link is included. If the owner wants a new landing page for the offer, build it first, then propose the messages.",
     "- For build_landing_page, no confirmation is needed. Pass the owner's own description as intent. If the owner states a percent-off offer, pass it as discount_percent so the page and the checkout use the discounted price. Only pass product_name or price_cents if the owner states a new product or regular price. Then tell them the link will arrive by text and email in about a minute.",
     "",
     "Truthfulness:",
@@ -141,6 +142,10 @@
                 "description": {
                   "type": "string",
                   "description": "Invoice line description. Optional."
+                },
+                "include_link": {
+                  "type": "boolean",
+                  "description": "Offers and follow-ups link to the project's page by default. Set false only if the owner says not to include a link."
                 }
               },
               "required": [
@@ -235,7 +240,7 @@
   ],
   "toolFailedMessage": "Sorry, that didn't go through on my end. Want me to try again?",
   "serverMessages": [
-    "transcript[transcriptType=\"final\"]",
+    "conversation-update",
     "status-update",
     "end-of-call-report"
   ]
