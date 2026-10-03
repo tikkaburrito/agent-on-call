@@ -68,7 +68,7 @@ async function logEvent(callId: string | null | undefined, event: Record<string,
 // Vapi sends the whole conversation so far on every turn (and once more in
 // the end-of-call report). Each spoken line is stored at its position in the
 // call, so repeats update in place.
-async function syncTranscript(message: Message, messages: unknown) {
+async function syncTranscript(message: Message, messages: unknown, final = false) {
   if (!Array.isArray(messages)) return;
   const callId = await upsertCall(message);
   if (!callId) return;
@@ -87,8 +87,23 @@ async function syncTranscript(message: Message, messages: unknown) {
     });
   }
   if (rows.length === 0) return;
+  // Turn-by-turn updates can arrive out of order and re-split sentences. The
+  // end-of-call report is authoritative, so it replaces the transcript.
+  if (final) await db.from("call_events").delete().eq("call_id", callId).eq("kind", "transcript");
   const { error } = await db.from("call_events").upsert(rows, { onConflict: "call_id,seq" });
   if (error) console.error("transcript sync failed:", error.message);
+  if (!final) await db.from("call_events").delete().eq("call_id", callId).eq("kind", "transcript").gte("seq", rows.length);
+}
+
+// A draft the owner never said yes to must not sit there looking half-sent.
+async function cancelUnconfirmed(callId: string | undefined) {
+  if (!callId) return;
+  const { error } = await db
+    .from("actions")
+    .update({ status: "cancelled", result: { note: "The call ended before the owner said yes, so nothing was sent." } })
+    .eq("call_id", callId)
+    .eq("status", "proposed");
+  if (error) console.error("cancel unconfirmed failed:", error.message);
 }
 
 async function logStatus(message: Message) {
@@ -107,7 +122,8 @@ async function logStatus(message: Message) {
 }
 
 async function logEndOfCall(message: Message) {
-  await syncTranscript(message, message.artifact?.messages);
+  await syncTranscript(message, message.artifact?.messages, true);
+  await cancelUnconfirmed(message.call?.id);
   await upsertCall(message, {
     status: "ended",
     ended_reason: message.endedReason ?? null,

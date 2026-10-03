@@ -181,7 +181,9 @@ export async function propose_actions(ctx: CallerContext, args: Args): Promise<s
     const ids = item.customer_ids ? new Set(item.customer_ids) : null;
     for (const customer of pools[itemIndex]) {
       if (ids && !ids.has(customer.id)) continue;
-      const key = `${item.type}:${customer.id}`;
+      // One message per person: the same address signed up twice still gets one email.
+      const who = item.type === "email" ? customer.email.toLowerCase() : item.type === "sms" ? customer.phone ?? customer.id : customer.id;
+      const key = `${item.type}:${who}`;
       if (seen.has(key)) continue;
       if (item.type === "sms" && (!customer.consent || !customer.phone)) {
         skippedSms++;

@@ -390,6 +390,7 @@ export default function Dashboard() {
                           </a>
                         )}
                         {typeof a.result?.error === "string" && <p className="mt-3 text-red-300">Error: {a.result.error}</p>}
+                        {typeof a.result?.note === "string" && <p className="mt-3 text-zinc-400">{a.result.note}</p>}
                         {typeof a.result?.reason === "string" && (
                           <p className="mt-3 text-violet-300">Not sent: {a.result.reason} (demo data).</p>
                         )}

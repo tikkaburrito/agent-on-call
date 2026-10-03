@@ -19,7 +19,7 @@ type CallAction = {
   type: "email" | "sms" | "invoice";
   status: ActionStatus;
   payload: { subject?: string; body?: string; amount_cents?: number; intent?: string; copy_source?: string };
-  result: { error?: string; reason?: string; hosted_invoice_url?: string; sms_error?: string } | null;
+  result: { error?: string; reason?: string; note?: string; hosted_invoice_url?: string; sms_error?: string } | null;
   created_at: string;
   customers: { name: string; email: string } | null;
 };
@@ -412,6 +412,7 @@ export default function Admin() {
                           )}
                           {a.result?.error && <p className="mt-3 text-red-300">Failed: {a.result.error}</p>}
                           {a.result?.sms_error && <p className="mt-3 text-red-300">Text: {a.result.sms_error}</p>}
+                          {a.result?.note && <p className="mt-3 text-zinc-400">{a.result.note}</p>}
                           {a.result?.reason && <p className="mt-3 text-violet-300">Not sent: {a.result.reason} (demo data).</p>}
                         </div>
                       )}

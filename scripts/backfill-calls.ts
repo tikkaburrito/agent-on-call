@@ -26,7 +26,8 @@ async function main() {
     const { data: existing } = await db.from("call_events").select("kind").eq("call_id", c.id);
     const hasTranscript = (existing ?? []).some((e) => e.kind === "transcript");
     const hasTools = (existing ?? []).some((e) => e.kind === "tool_call");
-    if (hasTranscript) continue; // already complete
+    // Vapi's stored conversation is authoritative: replace any live-synced lines.
+    if (hasTranscript) await db.from("call_events").delete().eq("call_id", c.id).eq("kind", "transcript");
     const messages: VapiMessage[] = c.artifact?.messages ?? c.messages ?? [];
     if (messages.filter((m) => m.role !== "system").length === 0) continue;
 

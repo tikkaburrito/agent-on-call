@@ -50,6 +50,12 @@ Keys live in two places: Vercel (the website) and Supabase function secrets (the
 - **CRM by voice:** `add_customer`, `mark_paid`.
 - `scripts/m4-tools.sh` now has 39 checks, all passing.
 
+## Why an offer email stayed "proposed" (fixed)
+
+- It was not Resend. On the 3:34 PM call the agent drafted the "one month free" email and asked "Should I go ahead?", but the conversation moved on and the call ended without a yes, so the draft was never sent. On the 4:08 PM call only a landing page was asked for, so only the page link was emailed.
+- Now: drafts that never get a yes are cancelled when the call ends (with a note saying so); if a page and a message are requested together the agent does both; after building an offer page it asks whether to email the offer; one email per address even if someone signed up twice.
+- Tikka Burrito AI has 5 customers; the three added addresses are on `SEND_ALLOWLIST`, so they receive real emails.
+
 ## Notes
 
 - The Supabase project is on the free tier, so it is not billed.
