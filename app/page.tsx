@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { DEMO_BUSINESS_ID, dollars } from "@/lib/types";
+import { dollars, FEATURED_BUSINESS_ID } from "@/lib/types";
 import { Icon, type IconName } from "./icons";
 
 export const dynamic = "force-dynamic";
@@ -10,20 +10,21 @@ type DemoProject = {
   slug: string;
   product_name: string;
   price_cents: number;
+  discount_percent: number;
   customers: number;
   welcome: number;
   unpaid: number;
   dropped: number;
 };
 
-// Live numbers for the demo business. Counts only: no customer names or
+// Live numbers for the featured business. Counts only: no customer names or
 // contact details are shown on this public page.
 async function loadDemo(): Promise<{ name: string; projects: DemoProject[] } | null> {
   const db = supabaseAdmin();
   const { data: business } = await db
     .from("businesses")
-    .select("name, sites(id, slug, product_name, price_cents, created_at)")
-    .eq("id", DEMO_BUSINESS_ID)
+    .select("name, sites(id, slug, product_name, price_cents, discount_percent, created_at)")
+    .eq("id", FEATURED_BUSINESS_ID)
     .maybeSingle();
   if (!business) return null;
   const sites = [...(business.sites ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -39,6 +40,7 @@ async function loadDemo(): Promise<{ name: string; projects: DemoProject[] } | n
         slug: s.slug,
         product_name: s.product_name,
         price_cents: s.price_cents,
+        discount_percent: s.discount_percent,
         customers: count ?? 0,
         welcome: n("welcome_pending"),
         unpaid: n("unpaid"),
@@ -335,21 +337,27 @@ export default async function Home() {
         >
           <div className="mx-auto max-w-6xl px-5 py-14">
             <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-emerald-600">
-              <span className="size-2.5 rounded-full bg-emerald-500" /> Live demo business
+              <span className="size-2.5 rounded-full bg-emerald-500" /> Live business
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">{demo.name}</h2>
             <p className="mt-4 max-w-3xl text-lg leading-relaxed text-slate-600">
-              A demo studio with {demo.projects.length} projects and sample customers. These numbers come straight
-              from its database. Sign up on one of its pages, leave the checkout unpaid, and you become something the
-              agent reports on the owner&rsquo;s next call.
+              {demo.name} runs on Agent on Call. These numbers come straight from its database. Sign up on its page,
+              leave the checkout unpaid, and you become something the agent reports on the owner&rsquo;s next call.
             </p>
 
-            <div className="mt-8 grid gap-5 md:grid-cols-2">
+            <div className={`mt-8 grid gap-5 ${demo.projects.length > 1 ? "md:grid-cols-2" : "max-w-3xl"}`}>
               {demo.projects.map((p) => (
                 <article key={p.id} className={`rounded-3xl p-6 md:p-8 ${CARD}`}>
                   <div className="flex items-baseline justify-between gap-4">
                     <h3 className="text-2xl font-semibold">{p.product_name}</h3>
-                    <p className="text-2xl font-semibold tabular-nums text-slate-500">{dollars(p.price_cents)}</p>
+                    <p className="flex shrink-0 items-center gap-2 text-2xl font-semibold tabular-nums text-slate-500">
+                      {p.discount_percent > 0 && (
+                        <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-sm font-semibold text-rose-600">
+                          {p.discount_percent}% off
+                        </span>
+                      )}
+                      {dollars(p.price_cents)}
+                    </p>
                   </div>
                   <p className="mt-1 text-base text-slate-500">{p.customers} customers</p>
                   <dl className="mt-6 grid grid-cols-3 gap-3">
@@ -376,8 +384,7 @@ export default async function Home() {
               ))}
             </div>
             <p className="mt-6 text-base text-slate-500">
-              Sample customers are fictional. Real messages only go to addresses the owner has put on an allowlist;
-              everyone else is marked as simulated.
+              Counts only. No customer names or contact details are shown on this page.
             </p>
           </div>
         </section>

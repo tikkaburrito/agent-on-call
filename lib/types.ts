@@ -97,6 +97,8 @@ export type AttentionItem = {
 
 export const DEMO_SITE_ID = "11111111-1111-4111-8111-111111111111";
 export const DEMO_BUSINESS_ID = "11111111-1111-4111-8111-111111111111";
+// The real business whose live counts the home page shows (Tikka Burrito AI).
+export const FEATURED_BUSINESS_ID = "490e665b-4ebc-4952-ac21-802eca2d0965";
 
 export const dollars = (cents: number) =>
   cents === 0 ? "Free" : `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
